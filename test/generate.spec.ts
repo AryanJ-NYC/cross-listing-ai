@@ -60,6 +60,25 @@ describe('runGenerateCommand', () => {
     expect(result.output).not.toContain('"humanReadable"');
   });
 
+  test('lets CLI marketplaces override the marketplaces declared inside a JSON input file', async () => {
+    const result = await runGenerateCommand(
+      {
+        input: 'example.json',
+        marketplaces: 'ebay',
+      },
+      {
+        readTextFile: async () =>
+          JSON.stringify({
+            extractedItem: readyItem,
+            marketplaces: ['ebay', 'mercari'],
+          }),
+      }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.result.listings.map((listing) => listing.marketplace)).toEqual(['ebay']);
+  });
+
   test('defaults to JSON output for non-interactive runs when no output is specified', async () => {
     const result = await runGenerateCommand(
       {
@@ -138,6 +157,82 @@ describe('runGenerateCommand', () => {
     expect(result.output).toContain('Status: ready');
   });
 
+  test('rejects an empty interactive marketplace selection instead of silently selecting all marketplaces', async () => {
+    await expect(
+      runGenerateCommand(
+        {
+          interactive: true,
+        },
+        {
+          collectInputs: async () => ({
+            images: ['https://example.com/item.jpg'],
+            marketplaces: [],
+          }),
+          extractor: {
+            extractFromImages: async () => readyItem,
+          },
+        }
+      )
+    ).rejects.toThrow('Select at least one marketplace.');
+  });
+
+  test('returns needs_input instead of throwing when interactive review clears required tcg fields', async () => {
+    const result = await runGenerateCommand(
+      {
+        interactive: true,
+        output: 'json',
+      },
+      {
+        collectInputs: async () => ({
+          images: ['https://example.com/item.jpg'],
+          marketplaces: ['tcgplayer'],
+        }),
+        extractor: {
+          extractFromImages: async () => ({
+            attributes: {
+              game: 'Pokemon',
+              set: 'Jungle',
+            },
+            category: 'Pokemon card',
+            condition: 'like new',
+            description: 'Near mint Jolteon holo card from Jungle.',
+            missingFields: [],
+            tcg: {
+              cardName: 'Jolteon',
+              cardNumber: '4/64',
+              foil: true,
+              game: 'Pokemon',
+              language: 'English',
+              rarity: 'Rare Holo',
+              set: 'Jungle',
+            },
+            title: 'Jolteon 4/64 Jungle Rare Holo Pokemon Card',
+            uncertainties: [],
+          }),
+        },
+        reviewer: async (item) => ({
+          ...item,
+          missingFields: ['tcg.cardName', 'tcg.game', 'tcg.set'],
+          tcg: {
+            cardName: '',
+            cardNumber: '',
+            foil: false,
+            game: '',
+            language: '',
+            rarity: '',
+            set: '',
+          },
+          uncertainties: [],
+        }),
+      }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.output)).toMatchObject({
+      status: 'needs_input',
+    });
+  });
+
   test('rejects invalid marketplace names instead of silently dropping them', async () => {
     await expect(
       runGenerateCommand(
@@ -149,6 +244,24 @@ describe('runGenerateCommand', () => {
           extractor: {
             extractFromImages: async () => readyItem,
           },
+        }
+      )
+    ).rejects.toThrow('Invalid marketplaces: invalid-marketplace');
+  });
+
+  test('rejects invalid marketplace names even when using a JSON input file', async () => {
+    await expect(
+      runGenerateCommand(
+        {
+          input: 'example.json',
+          marketplaces: 'invalid-marketplace',
+        },
+        {
+          readTextFile: async () =>
+            JSON.stringify({
+              extractedItem: readyItem,
+              marketplaces: ['ebay'],
+            }),
         }
       )
     ).rejects.toThrow('Invalid marketplaces: invalid-marketplace');

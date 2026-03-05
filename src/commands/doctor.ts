@@ -16,13 +16,14 @@ export async function runDoctor(options: {
   reachabilityCheck?: (url: string) => Promise<boolean>;
 } = {}): Promise<DoctorResult> {
   const env = options.env ?? process.env;
+  const imageInputs = options.imageInputs ?? [];
   const reachabilityCheck = options.reachabilityCheck ?? defaultReachabilityCheck;
   const checks: DoctorCheck[] = [];
 
   checks.push(checkNodeVersion(options.nodeVersion ?? process.versions.node));
-  checks.push(checkEnvVar('OPENAI_API_KEY', env.OPENAI_API_KEY));
+  checks.push(checkOpenAIKey(env.OPENAI_API_KEY, imageInputs.length > 0));
 
-  for (const input of options.imageInputs ?? []) {
+  for (const input of imageInputs) {
     checks.push(await checkImageInput(input, reachabilityCheck));
   }
 
@@ -117,11 +118,20 @@ function checkNodeVersion(version: string): DoctorCheck {
   };
 }
 
-function checkEnvVar(name: string, value: string | undefined): DoctorCheck {
+function checkOpenAIKey(value: string | undefined, required: boolean): DoctorCheck {
   const configured = Boolean(value?.trim());
+
+  if (!required && !configured) {
+    return {
+      message: 'OPENAI_API_KEY is optional for JSON-only workflows and required for image extraction.',
+      name: 'OPENAI_API_KEY',
+      status: 'pass',
+    };
+  }
+
   return {
-    message: configured ? `${name} is configured.` : `${name} is missing.`,
-    name,
+    message: configured ? 'OPENAI_API_KEY is configured.' : 'OPENAI_API_KEY is missing.',
+    name: 'OPENAI_API_KEY',
     status: configured ? 'pass' : 'fail',
   };
 }

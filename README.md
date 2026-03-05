@@ -36,7 +36,8 @@ crosslist generate --interactive
 crosslist generate --input ./examples/walkman.json
 crosslist generate --input ./examples/walkman.json --output both
 crosslist generate --input ./examples/pokemon-card.json --output json
-crosslist doctor --images ./fixtures/walkman-front.jpg
+crosslist doctor
+crosslist doctor --images ./path/to/item.jpg
 crosslist doctor --output json
 ```
 

@@ -2,6 +2,7 @@ import { checkbox, confirm, input, select } from '@inquirer/prompts';
 
 import { type ExtractedItem, type Marketplace, conditions, marketplaces } from '../schemas.js';
 import { looksLikeTcgInventory } from '../detectTcgEligibility.js';
+import { normalizeExtractedItem } from '../normalizeExtractedItem.js';
 
 type PromptDependencies = {
   checkbox: typeof checkbox;
@@ -128,11 +129,11 @@ async function reviewExtractedItemWithPrompts(
 function refreshSignals(item: ExtractedItem, uncertainties: string[]): ExtractedItem {
   const missingFields = [...requiredFieldChecks(item), ...requiredTcgFieldChecks(item)];
 
-  return {
+  return normalizeExtractedItem({
     ...item,
     missingFields,
     uncertainties,
-  };
+  });
 }
 
 function requiredFieldChecks(item: ExtractedItem) {

@@ -101,6 +101,31 @@ var DoctorResultSchema = z.object({
   ok: z.boolean()
 }).strict();
 
+// src/core/normalizeExtractedItem.ts
+function normalizeExtractedItem(item) {
+  const normalizedTcg = normalizeTcgDetails(item.tcg);
+  return {
+    ...item,
+    ...normalizedTcg ? { tcg: normalizedTcg } : {},
+    ...!normalizedTcg && item.tcg ? { tcg: void 0 } : {}
+  };
+}
+function normalizeTcgDetails(value) {
+  if (!value) {
+    return void 0;
+  }
+  const normalizedEntries = Object.entries(value).filter(([, entry]) => {
+    if (typeof entry === "boolean") {
+      return true;
+    }
+    return Boolean(entry?.trim());
+  });
+  if (normalizedEntries.length === 0) {
+    return void 0;
+  }
+  return TcgDetailsSchema.parse(Object.fromEntries(normalizedEntries));
+}
+
 // src/core/providers/openai.ts
 var supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
 function isSupportedLocalImagePath(filePath) {
@@ -192,30 +217,16 @@ function mimeTypeFor(filePath) {
       return "application/octet-stream";
   }
 }
-function normalizeTcgDetails(value) {
-  if (!value) {
-    return void 0;
-  }
-  const normalizedEntries = Object.entries(value).filter(([, entry]) => {
-    if (typeof entry === "boolean") {
-      return true;
-    }
-    return Boolean(entry?.trim());
-  });
-  if (normalizedEntries.length === 0) {
-    return void 0;
-  }
-  return TcgDetailsSchema.parse(Object.fromEntries(normalizedEntries));
-}
 
 // src/commands/doctor.ts
 async function runDoctor(options = {}) {
   const env = options.env ?? process.env;
+  const imageInputs = options.imageInputs ?? [];
   const reachabilityCheck = options.reachabilityCheck ?? defaultReachabilityCheck;
   const checks = [];
   checks.push(checkNodeVersion(options.nodeVersion ?? process.versions.node));
-  checks.push(checkEnvVar("OPENAI_API_KEY", env.OPENAI_API_KEY));
-  for (const input2 of options.imageInputs ?? []) {
+  checks.push(checkOpenAIKey(env.OPENAI_API_KEY, imageInputs.length > 0));
+  for (const input2 of imageInputs) {
     checks.push(await checkImageInput(input2, reachabilityCheck));
   }
   const result = {
@@ -284,11 +295,18 @@ function checkNodeVersion(version) {
     status: major >= 20 ? "pass" : "fail"
   };
 }
-function checkEnvVar(name, value) {
+function checkOpenAIKey(value, required) {
   const configured = Boolean(value?.trim());
+  if (!required && !configured) {
+    return {
+      message: "OPENAI_API_KEY is optional for JSON-only workflows and required for image extraction.",
+      name: "OPENAI_API_KEY",
+      status: "pass"
+    };
+  }
   return {
-    message: configured ? `${name} is configured.` : `${name} is missing.`,
-    name,
+    message: configured ? "OPENAI_API_KEY is configured." : "OPENAI_API_KEY is missing.",
+    name: "OPENAI_API_KEY",
     status: configured ? "pass" : "fail"
   };
 }
@@ -527,11 +545,12 @@ function renderTcgplayerListing(item) {
 
 // src/core/generateMarketplaceListings.ts
 function generateMarketplaceListings(extractedItem, requestedMarketplaces) {
-  if (extractedItem.missingFields.length > 0 || extractedItem.uncertainties.length > 0) {
+  const normalizedItem = normalizeExtractedItem(extractedItem);
+  if (normalizedItem.missingFields.length > 0 || normalizedItem.uncertainties.length > 0) {
     return ListingGenerationResultSchema.parse({
-      extractedItem,
+      extractedItem: normalizedItem,
       humanReadable: renderHumanReadable({
-        extractedItem,
+        extractedItem: normalizedItem,
         listings: [],
         schemaVersion,
         skippedMarketplaces: [],
@@ -547,21 +566,21 @@ function generateMarketplaceListings(extractedItem, requestedMarketplaces) {
   const skippedMarketplaces = [];
   for (const marketplace of new Set(requestedMarketplaces)) {
     if (marketplace === "tcgplayer") {
-      const tcg = detectTcgEligibility(extractedItem);
+      const tcg = detectTcgEligibility(normalizedItem);
       if (!tcg.eligible) {
         skippedMarketplaces.push({ marketplace, reason: tcg.reason });
         continue;
       }
-      listings.push(renderTcgplayerListing(extractedItem));
+      listings.push(renderTcgplayerListing(normalizedItem));
       continue;
     }
-    listings.push(renderListing(marketplace, extractedItem));
+    listings.push(renderListing(marketplace, normalizedItem));
   }
   const status = listings.length > 0 ? "ready" : "needs_input";
   return ListingGenerationResultSchema.parse({
-    extractedItem,
+    extractedItem: normalizedItem,
     humanReadable: renderHumanReadable({
-      extractedItem,
+      extractedItem: normalizedItem,
       listings,
       schemaVersion,
       skippedMarketplaces,
@@ -684,11 +703,11 @@ async function reviewExtractedItemWithPrompts(item, dependencies) {
 }
 function refreshSignals(item, uncertainties) {
   const missingFields = [...requiredFieldChecks(item), ...requiredTcgFieldChecks(item)];
-  return {
+  return normalizeExtractedItem({
     ...item,
     missingFields,
     uncertainties
-  };
+  });
 }
 function requiredFieldChecks(item) {
   return [
@@ -752,7 +771,9 @@ async function resolveRequestedInput(options, readTextFile, collectInputs) {
     return {
       extractedItem: parsed.extractedItem,
       images: parsed.images ?? [],
-      marketplaces: assertMarketplaces(parsed.marketplaces ?? [...marketplaces]),
+      marketplaces: assertMarketplaces(
+        options.marketplaces ? parseMarketplaces(options.marketplaces) : parsed.marketplaces ?? [...marketplaces]
+      ),
       output: parsed.output
     };
   }
@@ -761,7 +782,7 @@ async function resolveRequestedInput(options, readTextFile, collectInputs) {
     return {
       images: assertImages(interactive.images),
       marketplaces: assertMarketplaces(
-        interactive.marketplaces.length > 0 ? parseMarketplaces(interactive.marketplaces.join(",")) : [...marketplaces]
+        options.marketplaces ? parseMarketplaces(options.marketplaces) : interactive.marketplaces
       )
     };
   }

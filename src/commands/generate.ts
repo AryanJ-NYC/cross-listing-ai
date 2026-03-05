@@ -73,7 +73,9 @@ async function resolveRequestedInput(
     return {
       extractedItem: parsed.extractedItem,
       images: parsed.images ?? [],
-      marketplaces: assertMarketplaces(parsed.marketplaces ?? [...marketplaces]),
+      marketplaces: assertMarketplaces(
+        options.marketplaces ? parseMarketplaces(options.marketplaces) : parsed.marketplaces ?? [...marketplaces]
+      ),
       output: parsed.output,
     };
   }
@@ -83,9 +85,7 @@ async function resolveRequestedInput(
     return {
       images: assertImages(interactive.images),
       marketplaces: assertMarketplaces(
-        interactive.marketplaces.length > 0
-          ? parseMarketplaces(interactive.marketplaces.join(','))
-          : [...marketplaces]
+        options.marketplaces ? parseMarketplaces(options.marketplaces) : interactive.marketplaces
       ),
     };
   }

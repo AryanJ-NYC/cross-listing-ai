@@ -7,6 +7,23 @@ import { describe, expect, test } from 'vitest';
 import { runDoctor, runDoctorCommand } from '../src/commands/doctor.js';
 
 describe('runDoctor', () => {
+  test('passes JSON-only workflows without an OpenAI key when no image extraction is being validated', async () => {
+    const result = await runDoctor({
+      env: {},
+      imageInputs: [],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'OPENAI_API_KEY',
+          status: 'pass',
+        }),
+      ])
+    );
+  });
+
   test('reports missing OpenAI credentials and missing local files', async () => {
     const result = await runDoctor({
       env: {},

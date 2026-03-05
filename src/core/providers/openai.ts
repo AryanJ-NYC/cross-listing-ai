@@ -10,8 +10,8 @@ import {
   ConditionSchema,
   type ExtractedItem,
   ExtractedItemSchema,
-  TcgDetailsSchema,
 } from '../schemas.js';
+import { normalizeTcgDetails } from '../normalizeExtractedItem.js';
 
 export const supportedImageExtensions = ['.jpg', '.jpeg', '.png', '.webp'] as const;
 
@@ -120,26 +120,4 @@ function mimeTypeFor(filePath: string) {
     default:
       return 'application/octet-stream';
   }
-}
-
-function normalizeTcgDetails(
-  value: z.infer<typeof OpenAIExtractedItemSchema>['tcg']
-): ExtractedItem['tcg'] | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const normalizedEntries = Object.entries(value).filter(([, entry]) => {
-    if (typeof entry === 'boolean') {
-      return true;
-    }
-
-    return Boolean(entry?.trim());
-  });
-
-  if (normalizedEntries.length === 0) {
-    return undefined;
-  }
-
-  return TcgDetailsSchema.parse(Object.fromEntries(normalizedEntries));
 }

@@ -1,4 +1,5 @@
 import { detectTcgEligibility } from './detectTcgEligibility.js';
+import { normalizeExtractedItem } from './normalizeExtractedItem.js';
 import { renderHumanReadable } from './renderHumanReadable.js';
 import { renderCraigslistListing } from './marketplaces/craigslist.js';
 import { renderEbayListing } from './marketplaces/ebay.js';
@@ -18,11 +19,13 @@ export function generateMarketplaceListings(
   extractedItem: ExtractedItem,
   requestedMarketplaces: Marketplace[]
 ): ListingGenerationResult {
-  if (extractedItem.missingFields.length > 0 || extractedItem.uncertainties.length > 0) {
+  const normalizedItem = normalizeExtractedItem(extractedItem);
+
+  if (normalizedItem.missingFields.length > 0 || normalizedItem.uncertainties.length > 0) {
     return ListingGenerationResultSchema.parse({
-      extractedItem,
+      extractedItem: normalizedItem,
       humanReadable: renderHumanReadable({
-        extractedItem,
+        extractedItem: normalizedItem,
         listings: [],
         schemaVersion,
         skippedMarketplaces: [],
@@ -40,24 +43,24 @@ export function generateMarketplaceListings(
 
   for (const marketplace of new Set(requestedMarketplaces)) {
     if (marketplace === 'tcgplayer') {
-      const tcg = detectTcgEligibility(extractedItem);
+      const tcg = detectTcgEligibility(normalizedItem);
       if (!tcg.eligible) {
         skippedMarketplaces.push({ marketplace, reason: tcg.reason });
         continue;
       }
-      listings.push(renderTcgplayerListing(extractedItem));
+      listings.push(renderTcgplayerListing(normalizedItem));
       continue;
     }
 
-    listings.push(renderListing(marketplace, extractedItem));
+    listings.push(renderListing(marketplace, normalizedItem));
   }
 
   const status = listings.length > 0 ? 'ready' : 'needs_input';
 
   return ListingGenerationResultSchema.parse({
-    extractedItem,
+    extractedItem: normalizedItem,
     humanReadable: renderHumanReadable({
-      extractedItem,
+      extractedItem: normalizedItem,
       listings,
       schemaVersion,
       skippedMarketplaces,

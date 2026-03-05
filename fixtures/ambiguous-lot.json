@@ -1,0 +1,8 @@
+{
+  "images": [
+    "https://example.com/lot-front.jpg",
+    "https://example.com/lot-side.jpg"
+  ],
+  "marketplaces": ["ebay", "mercari", "facebook-marketplace", "craigslist"],
+  "output": "json"
+}

@@ -1,0 +1,17 @@
+{
+  "marketplaces": ["ebay", "mercari", "facebook-marketplace", "craigslist"],
+  "output": "json",
+  "extractedItem": {
+    "title": "Sony WM-FX195 Walkman Cassette Player with Headphones",
+    "description": "Working Sony Walkman cassette player with headphones and battery door intact.",
+    "condition": "very good",
+    "category": "portable cassette player",
+    "attributes": {
+      "brand": "Sony",
+      "model": "WM-FX195",
+      "color": "Black"
+    },
+    "missingFields": [],
+    "uncertainties": []
+  }
+}

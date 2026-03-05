@@ -1,0 +1,26 @@
+{
+  "marketplaces": ["ebay", "mercari", "facebook-marketplace", "craigslist", "tcgplayer"],
+  "extractedItem": {
+    "title": "Jolteon 4/64 Jungle Rare Holo Pokemon Card",
+    "description": "Near mint Jolteon holo card from Jungle.",
+    "condition": "like new",
+    "category": "trading-card-single",
+    "attributes": {
+      "game": "Pokemon",
+      "set": "Jungle",
+      "cardNumber": "4/64",
+      "rarity": "Rare Holo"
+    },
+    "missingFields": [],
+    "uncertainties": [],
+    "tcg": {
+      "cardName": "Jolteon",
+      "cardNumber": "4/64",
+      "foil": true,
+      "game": "Pokemon",
+      "language": "English",
+      "rarity": "Rare Holo",
+      "set": "Jungle"
+    }
+  }
+}

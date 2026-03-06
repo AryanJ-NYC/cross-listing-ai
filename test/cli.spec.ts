@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { buildCli } from '../src/cli.js';
+import { buildCli } from '../src/program.js';
 
 describe('cli', () => {
   test('registers generate and doctor commands', () => {

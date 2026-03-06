@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { Command } from 'commander';
+import { checkbox, input, confirm, select } from '@inquirer/prompts';
 
 declare const schemaVersion = "1.0.0";
 declare const marketplaces: readonly ["ebay", "mercari", "facebook-marketplace", "craigslist", "tcgplayer"];
@@ -503,4 +505,150 @@ type ListingGenerationResult = z.infer<typeof ListingGenerationResultSchema>;
 type Marketplace = z.infer<typeof MarketplaceSchema>;
 type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
-export { ConditionSchema as C, type DoctorCheck as D, type ExtractedItem as E, type GenerateFileInput as G, type ListingGenerationResult as L, type Marketplace as M, type OutputFormat as O, SkippedMarketplaceSchema as S, type DoctorResult as a, DoctorResultSchema as b, ExtractedItemConditionSchema as c, ExtractedItemSchema as d, GenerateFileInputSchema as e, ListingGenerationResultSchema as f, ListingSchema as g, MarketplaceSchema as h, OutputFormatSchema as i, conditions as j, marketplaces as m, schemaVersion as s };
+declare function generateMarketplaceListings(extractedItem: ExtractedItem, requestedMarketplaces: Marketplace[]): ListingGenerationResult;
+
+declare function looksLikeTcgInventory(item: {
+    category: ExtractedItem['category'];
+    tcg?: ExtractedItem['tcg'];
+}): boolean;
+
+type TcgLike = {
+    cardName?: string | null;
+    cardNumber?: string | null;
+    foil?: boolean | null;
+    game?: string | null;
+    language?: string | null;
+    rarity?: string | null;
+    set?: string | null;
+};
+declare function normalizeExtractedItem(item: ExtractedItem): ExtractedItem;
+declare function normalizeTcgDetails(value: TcgLike | undefined | null): {
+    set?: string | undefined;
+    cardName?: string | undefined;
+    cardNumber?: string | undefined;
+    foil?: boolean | undefined;
+    game?: string | undefined;
+    language?: string | undefined;
+    rarity?: string | undefined;
+} | undefined;
+
+declare function renderHumanReadable(result: Omit<ListingGenerationResult, 'humanReadable'>): string;
+
+declare function runDoctorCommand(options: {
+    apiBaseUrl?: string;
+    images?: string[];
+    output?: string;
+}, dependencies?: {
+    apiSupportCheck?: (url: string) => Promise<boolean>;
+    nodeVersion?: string;
+    reachabilityCheck?: (url: string) => Promise<boolean>;
+}): Promise<{
+    exitCode: number;
+    output: string;
+    result: {
+        humanReadable: string;
+        checks: {
+            status: "pass" | "fail";
+            message: string;
+            name: string;
+        }[];
+        ok: boolean;
+    };
+}>;
+
+type PromptDependencies = {
+    checkbox: typeof checkbox;
+    input: typeof input;
+};
+type ReviewPromptDependencies = {
+    confirm: typeof confirm;
+    input: typeof input;
+    select: typeof select;
+};
+declare function collectInteractiveInputs(dependencies?: PromptDependencies): Promise<{
+    imageUrls: string[];
+    marketplaces: Marketplace[];
+}>;
+declare function reviewExtractedItem(item: ExtractedItem, dependencies?: ReviewPromptDependencies): Promise<{
+    attributes: Record<string, string>;
+    category: string;
+    condition: "" | "brand new" | "like new" | "very good" | "good" | "acceptable" | "for parts or not working";
+    description: string;
+    missingFields: string[];
+    title: string;
+    uncertainties: string[];
+    tcg?: {
+        set?: string | undefined;
+        cardName?: string | undefined;
+        cardNumber?: string | undefined;
+        foil?: boolean | undefined;
+        game?: string | undefined;
+        language?: string | undefined;
+        rarity?: string | undefined;
+    } | undefined;
+}>;
+
+declare function runGenerateCommand(options: {
+    apiBaseUrl?: string;
+    images?: string[];
+    input?: string;
+    interactive?: boolean;
+    marketplaces?: string;
+    output?: string;
+}, dependencies?: {
+    collectInputs?: typeof collectInteractiveInputs;
+    fetchImpl?: typeof fetch;
+    readTextFile?: (path: string) => Promise<string>;
+    reviewer?: typeof reviewExtractedItem;
+}): Promise<{
+    exitCode: number;
+    output: string;
+    result: {
+        status: "ready" | "needs_input";
+        extractedItem: {
+            attributes: Record<string, string>;
+            category: string;
+            condition: "" | "brand new" | "like new" | "very good" | "good" | "acceptable" | "for parts or not working";
+            description: string;
+            missingFields: string[];
+            title: string;
+            uncertainties: string[];
+            tcg?: {
+                set?: string | undefined;
+                cardName?: string | undefined;
+                cardNumber?: string | undefined;
+                foil?: boolean | undefined;
+                game?: string | undefined;
+                language?: string | undefined;
+                rarity?: string | undefined;
+            } | undefined;
+        };
+        humanReadable: string;
+        listings: {
+            description: string;
+            title: string;
+            copyBlock: string;
+            marketplace: "ebay" | "mercari" | "facebook-marketplace" | "craigslist" | "tcgplayer";
+            notesToSeller: string[];
+            bullets?: string[] | undefined;
+            itemSpecifics?: Record<string, string> | undefined;
+        }[];
+        schemaVersion: string;
+        skippedMarketplaces: {
+            marketplace: "ebay" | "mercari" | "facebook-marketplace" | "craigslist" | "tcgplayer";
+            reason: string;
+        }[];
+    };
+}>;
+
+type CliDependencies = {
+    runDoctorCommand?: typeof runDoctorCommand;
+    runGenerateCommand?: typeof runGenerateCommand;
+    setExitCode?: (value: number) => void;
+    stderr?: Pick<NodeJS.WriteStream, 'write'>;
+    stdout?: Pick<NodeJS.WriteStream, 'write'>;
+};
+declare function buildCli(dependencies?: CliDependencies): Command;
+declare function runCli(argv?: string[]): Promise<void>;
+
+export { ConditionSchema, type DoctorCheck, type DoctorResult, DoctorResultSchema, type ExtractedItem, ExtractedItemConditionSchema, ExtractedItemSchema, type GenerateFileInput, GenerateFileInputSchema, type ListingGenerationResult, ListingGenerationResultSchema, ListingSchema, type Marketplace, MarketplaceSchema, type OutputFormat, OutputFormatSchema, SkippedMarketplaceSchema, buildCli, conditions, generateMarketplaceListings, looksLikeTcgInventory, marketplaces, normalizeExtractedItem, normalizeTcgDetails, renderHumanReadable, runCli, schemaVersion };

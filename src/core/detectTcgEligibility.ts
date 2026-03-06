@@ -1,4 +1,4 @@
-import type { ExtractedItem } from './schemas.js';
+import type { ExtractedItem } from './schemas';
 
 export function detectTcgEligibility(item: ExtractedItem) {
   const tcg = item.tcg;
@@ -14,11 +14,19 @@ export function detectTcgEligibility(item: ExtractedItem) {
   };
 }
 
-export function looksLikeTcgInventory(item: Pick<ExtractedItem, 'category' | 'tcg'>) {
+export function looksLikeTcgInventory(item: { category: ExtractedItem['category']; tcg?: ExtractedItem['tcg'] }) {
   const category = normalizeValue(item.category);
   const game = normalizeValue(item.tcg?.game ?? '');
 
   return matchesAnyKeyword(category, tcgCategoryKeywords) || matchesAnyKeyword(game, tcgGameKeywords);
+}
+
+function normalizeValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function matchesAnyKeyword(value: string, keywords: string[]) {
+  return keywords.some((keyword) => value.includes(keyword));
 }
 
 const tcgCategoryKeywords = [
@@ -53,11 +61,3 @@ const tcgGameKeywords = [
   'dragon ball',
   'star wars unlimited',
 ];
-
-function normalizeValue(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function matchesAnyKeyword(value: string, keywords: string[]) {
-  return keywords.some((keyword) => value.includes(keyword));
-}

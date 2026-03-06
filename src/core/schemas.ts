@@ -24,6 +24,7 @@ export const conditions = [
 export const MarketplaceSchema = z.enum(marketplaces);
 export const OutputFormatSchema = z.enum(outputFormats);
 export const ConditionSchema = z.enum(conditions);
+export const ExtractedItemConditionSchema = z.union([ConditionSchema, z.literal('')]);
 
 export const TcgDetailsSchema = z
   .object({
@@ -40,12 +41,12 @@ export const TcgDetailsSchema = z
 export const ExtractedItemSchema = z
   .object({
     attributes: z.record(z.string(), z.string()),
-    category: z.string().min(1),
-    condition: ConditionSchema,
-    description: z.string().min(1),
+    category: z.string(),
+    condition: ExtractedItemConditionSchema,
+    description: z.string(),
     missingFields: z.array(z.string()),
     tcg: TcgDetailsSchema.optional(),
-    title: z.string().min(1),
+    title: z.string(),
     uncertainties: z.array(z.string()),
   })
   .strict();
@@ -83,17 +84,25 @@ export const ListingGenerationResultSchema = z
 export const GenerateFileInputSchema = z
   .object({
     extractedItem: ExtractedItemSchema.optional(),
-    images: z.array(z.string()).optional(),
+    imageUrls: z.array(z.string().url()).optional(),
     marketplaces: z.array(MarketplaceSchema).optional(),
     output: OutputFormatSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (!value.extractedItem && (!value.images || value.images.length === 0)) {
+    if (value.extractedItem && value.imageUrls?.length) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Provide either extractedItem or images.',
-        path: ['images'],
+        message: 'Provide either extractedItem or imageUrls, not both.',
+        path: ['imageUrls'],
+      });
+    }
+
+    if (!value.extractedItem && (!value.imageUrls || value.imageUrls.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide either extractedItem or imageUrls.',
+        path: ['imageUrls'],
       });
     }
   });

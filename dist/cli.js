@@ -1,231 +1,79 @@
 #!/usr/bin/env node
+import {
+  DoctorResultSchema,
+  GenerateFileInputSchema,
+  ListingGenerationResultSchema,
+  OutputFormatSchema,
+  conditions,
+  looksLikeTcgInventory,
+  marketplaces,
+  normalizeExtractedItem,
+  renderHumanReadable
+} from "./chunk-PE47LNGQ.js";
 
 // src/cli.ts
 import { fileURLToPath } from "url";
 import { Command } from "commander";
 
-// src/commands/doctor.ts
-import { stat } from "fs/promises";
-
-// src/core/providers/openai.ts
-import { readFile } from "fs/promises";
-import { extname } from "path";
-import OpenAI from "openai";
-import { zodResponseFormat } from "openai/helpers/zod";
-import { z as z2 } from "zod";
-
-// src/core/schemas.ts
-import { z } from "zod";
-var schemaVersion = "1.0.0";
-var marketplaces = [
-  "ebay",
-  "mercari",
-  "facebook-marketplace",
-  "craigslist",
-  "tcgplayer"
-];
-var outputFormats = ["text", "json", "both"];
-var conditions = [
-  "brand new",
-  "like new",
-  "very good",
-  "good",
-  "acceptable",
-  "for parts or not working"
-];
-var MarketplaceSchema = z.enum(marketplaces);
-var OutputFormatSchema = z.enum(outputFormats);
-var ConditionSchema = z.enum(conditions);
-var TcgDetailsSchema = z.object({
-  cardName: z.string().min(1).optional(),
-  cardNumber: z.string().min(1).optional(),
-  foil: z.boolean().optional(),
-  game: z.string().min(1).optional(),
-  language: z.string().min(1).optional(),
-  rarity: z.string().min(1).optional(),
-  set: z.string().min(1).optional()
-}).strict();
-var ExtractedItemSchema = z.object({
-  attributes: z.record(z.string(), z.string()),
-  category: z.string().min(1),
-  condition: ConditionSchema,
-  description: z.string().min(1),
-  missingFields: z.array(z.string()),
-  tcg: TcgDetailsSchema.optional(),
-  title: z.string().min(1),
-  uncertainties: z.array(z.string())
-}).strict();
-var ListingSchema = z.object({
-  bullets: z.array(z.string()).optional(),
-  copyBlock: z.string().min(1),
-  description: z.string().min(1),
-  itemSpecifics: z.record(z.string(), z.string()).optional(),
-  marketplace: MarketplaceSchema,
-  notesToSeller: z.array(z.string()),
-  title: z.string().min(1)
-}).strict();
-var SkippedMarketplaceSchema = z.object({
-  marketplace: MarketplaceSchema,
-  reason: z.string().min(1)
-}).strict();
-var ListingGenerationResultSchema = z.object({
-  extractedItem: ExtractedItemSchema,
-  humanReadable: z.string().min(1),
-  listings: z.array(ListingSchema),
-  schemaVersion: z.string().min(1),
-  skippedMarketplaces: z.array(SkippedMarketplaceSchema),
-  status: z.enum(["ready", "needs_input"])
-}).strict();
-var GenerateFileInputSchema = z.object({
-  extractedItem: ExtractedItemSchema.optional(),
-  images: z.array(z.string()).optional(),
-  marketplaces: z.array(MarketplaceSchema).optional(),
-  output: OutputFormatSchema.optional()
-}).strict().superRefine((value, ctx) => {
-  if (!value.extractedItem && (!value.images || value.images.length === 0)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Provide either extractedItem or images.",
-      path: ["images"]
-    });
-  }
-});
-var DoctorCheckSchema = z.object({
-  message: z.string().min(1),
-  name: z.string().min(1),
-  status: z.enum(["pass", "fail"])
-}).strict();
-var DoctorResultSchema = z.object({
-  checks: z.array(DoctorCheckSchema),
-  humanReadable: z.string().min(1),
-  ok: z.boolean()
-}).strict();
-
-// src/core/normalizeExtractedItem.ts
-function normalizeExtractedItem(item) {
-  const normalizedTcg = normalizeTcgDetails(item.tcg);
-  return {
-    ...item,
-    ...normalizedTcg ? { tcg: normalizedTcg } : {},
-    ...!normalizedTcg && item.tcg ? { tcg: void 0 } : {}
-  };
-}
-function normalizeTcgDetails(value) {
-  if (!value) {
-    return void 0;
-  }
-  const normalizedEntries = Object.entries(value).filter(([, entry]) => {
-    if (typeof entry === "boolean") {
-      return true;
-    }
-    return Boolean(entry?.trim());
+// src/core/api.ts
+async function callCrosslistApi(input2, options = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const endpoint = new URL("/api/public/v1/crosslist/generate", resolveApiBaseUrl(options.apiBaseUrl));
+  const response = await fetchImpl(endpoint, {
+    body: JSON.stringify(
+      "imageUrls" in input2 ? {
+        image_urls: input2.imageUrls,
+        marketplaces: input2.marketplaces
+      } : {
+        extracted_item: input2.extractedItem,
+        marketplaces: input2.marketplaces
+      }
+    ),
+    headers: { "content-type": "application/json" },
+    method: "POST"
   });
-  if (normalizedEntries.length === 0) {
-    return void 0;
+  const responseBody = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(extractProblemMessage(responseBody, response.status));
   }
-  return TcgDetailsSchema.parse(Object.fromEntries(normalizedEntries));
+  return ListingGenerationResultSchema.parse({
+    extractedItem: responseBody?.data?.extracted_item,
+    humanReadable: renderHumanReadable({
+      extractedItem: responseBody?.data?.extracted_item,
+      listings: responseBody?.data?.listings,
+      schemaVersion: responseBody?.data?.schema_version,
+      skippedMarketplaces: responseBody?.data?.skipped_marketplaces,
+      status: responseBody?.data?.status
+    }),
+    listings: responseBody?.data?.listings,
+    schemaVersion: responseBody?.data?.schema_version,
+    skippedMarketplaces: responseBody?.data?.skipped_marketplaces,
+    status: responseBody?.data?.status
+  });
 }
-
-// src/core/providers/openai.ts
-var supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-function isSupportedLocalImagePath(filePath) {
-  return supportedImageExtensions.includes(extname(filePath).toLowerCase());
+function resolveApiBaseUrl(explicitBaseUrl) {
+  return explicitBaseUrl?.trim() || process.env.CROSSLIST_API_BASE_URL?.trim() || defaultApiBaseUrl;
 }
-var OpenAIExtractedItemSchema = z2.object({
-  attributes: z2.record(z2.string(), z2.string()),
-  category: z2.string().min(1),
-  condition: ConditionSchema,
-  description: z2.string().min(1),
-  missingFields: z2.array(z2.string()),
-  tcg: z2.object({
-    cardName: z2.string().nullable(),
-    cardNumber: z2.string().nullable(),
-    foil: z2.boolean().nullable(),
-    game: z2.string().nullable(),
-    language: z2.string().nullable(),
-    rarity: z2.string().nullable(),
-    set: z2.string().nullable()
-  }).strict().nullable(),
-  title: z2.string().min(1),
-  uncertainties: z2.array(z2.string())
-}).strict();
-var OpenAIItemExtractionProvider = class {
-  constructor(client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), model = "gpt-4.1-mini") {
-    this.client = client;
-    this.model = model;
+function extractProblemMessage(responseBody, status) {
+  if (responseBody?.detail) {
+    return responseBody.detail;
   }
-  async extractFromImages(imageInputs) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is required to extract item details from images.");
-    }
-    const completion = await this.client.chat.completions.parse({
-      messages: [
-        {
-          role: "system",
-          content: "You extract structured seller listing data from product photos. Use US English. Never invent facts. Unknown fields must stay missing and be reflected in missingFields or uncertainties."
-        },
-        {
-          role: "user",
-          content: [
-            {
-              text: "Review these product images and extract a listing title, description, condition, category, attributes, missing fields, uncertainties, and optional trading card fields when relevant.",
-              type: "text"
-            },
-            ...await Promise.all(imageInputs.map((input2) => toImagePart(input2)))
-          ]
-        }
-      ],
-      model: this.model,
-      response_format: zodResponseFormat(OpenAIExtractedItemSchema, "crosslist_extracted_item")
-    });
-    const parsed = completion.choices[0]?.message.parsed;
-    if (!parsed) {
-      throw new Error("OpenAI did not return structured extraction data.");
-    }
-    return ExtractedItemSchema.parse({
-      ...parsed,
-      tcg: normalizeTcgDetails(parsed.tcg)
-    });
+  if (responseBody?.title) {
+    return `${responseBody.title} (${status})`;
   }
-};
-async function toImagePart(input2) {
-  return {
-    image_url: {
-      url: isRemoteUrl(input2) ? input2 : await toDataUrl(input2)
-    },
-    type: "image_url"
-  };
+  return `Crosslist API request failed with status ${status}.`;
 }
-function isRemoteUrl(input2) {
-  return /^https?:\/\//i.test(input2);
-}
-async function toDataUrl(filePath) {
-  const bytes = await readFile(filePath);
-  const mimeType = mimeTypeFor(filePath);
-  return `data:${mimeType};base64,${bytes.toString("base64")}`;
-}
-function mimeTypeFor(filePath) {
-  switch (extname(filePath).toLowerCase()) {
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".png":
-      return "image/png";
-    case ".webp":
-      return "image/webp";
-    default:
-      return "application/octet-stream";
-  }
-}
+var defaultApiBaseUrl = "https://satstash.io";
 
 // src/commands/doctor.ts
 async function runDoctor(options = {}) {
-  const env = options.env ?? process.env;
   const imageInputs = options.imageInputs ?? [];
+  const apiSupportCheck = options.apiSupportCheck ?? defaultApiSupportCheck;
   const reachabilityCheck = options.reachabilityCheck ?? defaultReachabilityCheck;
+  const apiBaseUrl = resolveApiBaseUrl(options.apiBaseUrl);
   const checks = [];
   checks.push(checkNodeVersion(options.nodeVersion ?? process.versions.node));
-  checks.push(checkOpenAIKey(env.OPENAI_API_KEY, imageInputs.length > 0));
+  checks.push(await checkApiBaseUrl(apiBaseUrl, apiSupportCheck));
   for (const input2 of imageInputs) {
     checks.push(await checkImageInput(input2, reachabilityCheck));
   }
@@ -238,7 +86,8 @@ async function runDoctor(options = {}) {
 }
 async function runDoctorCommand(options, dependencies = {}) {
   const result = await runDoctor({
-    env: dependencies.env,
+    apiSupportCheck: dependencies.apiSupportCheck,
+    apiBaseUrl: options.apiBaseUrl,
     imageInputs: options.images,
     nodeVersion: dependencies.nodeVersion,
     reachabilityCheck: dependencies.reachabilityCheck
@@ -250,41 +99,36 @@ async function runDoctorCommand(options, dependencies = {}) {
     result
   };
 }
-async function checkImageInput(input2, reachabilityCheck) {
-  if (/^https?:\/\//i.test(input2)) {
-    const reachable = await reachabilityCheck(input2);
+async function checkApiBaseUrl(apiBaseUrl, apiSupportCheck) {
+  try {
+    const url = new URL("/api/public/v1/openapi.json", apiBaseUrl).toString();
+    const reachable = await apiSupportCheck(url);
     return {
-      message: reachable ? "Remote image URL is reachable." : "Remote image URL could not be reached.",
-      name: `image:${input2}`,
+      message: reachable ? "Public API is reachable and exposes /crosslist/generate." : "Public API could not be reached or does not expose /crosslist/generate.",
+      name: `api:${apiBaseUrl}`,
       status: reachable ? "pass" : "fail"
     };
-  }
-  const details = await stat(input2).catch(() => null);
-  if (!details) {
+  } catch {
     return {
-      message: "Local image file was not found.",
+      message: "API base URL is invalid.",
+      name: `api:${apiBaseUrl}`,
+      status: "fail"
+    };
+  }
+}
+async function checkImageInput(input2, reachabilityCheck) {
+  if (!/^https?:\/\//i.test(input2)) {
+    return {
+      message: "Image extraction is URL-only in v1. Provide a hosted image URL.",
       name: `image:${input2}`,
       status: "fail"
     };
   }
-  if (!details.isFile()) {
-    return {
-      message: "Local image path must point to a file, not a directory.",
-      name: `image:${input2}`,
-      status: "fail"
-    };
-  }
-  if (!isSupportedLocalImagePath(input2)) {
-    return {
-      message: "Local image must use .jpg, .jpeg, .png, or .webp.",
-      name: `image:${input2}`,
-      status: "fail"
-    };
-  }
+  const reachable = await reachabilityCheck(input2);
   return {
-    message: "Local image file exists and uses a supported format.",
+    message: reachable ? "Remote image URL is reachable." : "Remote image URL could not be reached.",
     name: `image:${input2}`,
-    status: "pass"
+    status: reachable ? "pass" : "fail"
   };
 }
 function checkNodeVersion(version) {
@@ -295,21 +139,6 @@ function checkNodeVersion(version) {
     status: major >= 20 ? "pass" : "fail"
   };
 }
-function checkOpenAIKey(value, required) {
-  const configured = Boolean(value?.trim());
-  if (!required && !configured) {
-    return {
-      message: "OPENAI_API_KEY is optional for JSON-only workflows and required for image extraction.",
-      name: "OPENAI_API_KEY",
-      status: "pass"
-    };
-  }
-  return {
-    message: configured ? "OPENAI_API_KEY is configured." : "OPENAI_API_KEY is missing.",
-    name: "OPENAI_API_KEY",
-    status: configured ? "pass" : "fail"
-  };
-}
 async function defaultReachabilityCheck(url) {
   const response = await fetch(url, { method: "HEAD" }).catch(() => null);
   if (response?.ok) {
@@ -317,6 +146,14 @@ async function defaultReachabilityCheck(url) {
   }
   const fallback = await fetch(url).catch(() => null);
   return fallback?.ok ?? false;
+}
+async function defaultApiSupportCheck(url) {
+  const response = await fetch(url).catch(() => null);
+  if (!response?.ok) {
+    return false;
+  }
+  const body = await response.json().catch(() => null);
+  return Boolean(body?.paths?.["/crosslist/generate"]);
 }
 function formatOutput(result, requestedOutput) {
   if (requestedOutput === "json") {
@@ -332,278 +169,7 @@ ${JSON.stringify(result, null, 2)}`;
 }
 
 // src/commands/generate.ts
-import { readFile as readFile2 } from "fs/promises";
-
-// src/core/detectTcgEligibility.ts
-function detectTcgEligibility(item) {
-  const tcg = item.tcg;
-  const hasRequiredFields = Boolean(tcg?.cardName?.trim() && tcg?.game?.trim() && tcg?.set?.trim());
-  if (looksLikeTcgInventory(item) && hasRequiredFields) {
-    return { eligible: true };
-  }
-  return {
-    eligible: false,
-    reason: "TCGPlayer is only available for trading card inventory with card-specific data."
-  };
-}
-function looksLikeTcgInventory(item) {
-  const category = normalizeValue(item.category);
-  const game = normalizeValue(item.tcg?.game ?? "");
-  return matchesAnyKeyword(category, tcgCategoryKeywords) || matchesAnyKeyword(game, tcgGameKeywords);
-}
-var tcgCategoryKeywords = [
-  "trading card",
-  "trading-card",
-  "tcg",
-  "ccg",
-  "pokemon card",
-  "pokemon",
-  "magic the gathering",
-  "mtg",
-  "yu-gi-oh",
-  "yugioh",
-  "lorcana",
-  "digimon",
-  "flesh and blood",
-  "one piece",
-  "dragon ball",
-  "star wars unlimited"
-];
-var tcgGameKeywords = [
-  "pokemon",
-  "magic",
-  "mtg",
-  "yu-gi-oh",
-  "yugioh",
-  "lorcana",
-  "digimon",
-  "flesh and blood",
-  "one piece",
-  "dragon ball",
-  "star wars unlimited"
-];
-function normalizeValue(value) {
-  return value.trim().toLowerCase();
-}
-function matchesAnyKeyword(value, keywords) {
-  return keywords.some((keyword) => value.includes(keyword));
-}
-
-// src/core/renderHumanReadable.ts
-function renderHumanReadable(result) {
-  const sections = [
-    `Status: ${result.status}`,
-    renderIssueSummary(result),
-    ...result.listings.map((listing) => {
-      return [
-        "",
-        headingFor(listing.marketplace),
-        "",
-        listing.copyBlock
-      ].join("\n");
-    })
-  ];
-  if (result.listings.length === 0) {
-    sections.push("", "No listing copy generated yet.");
-  }
-  if (result.skippedMarketplaces.length > 0) {
-    sections.push(
-      "",
-      "Skipped marketplaces:",
-      ...result.skippedMarketplaces.map(
-        (entry) => `- ${headingFor(entry.marketplace)}: ${entry.reason}`
-      )
-    );
-  }
-  return sections.filter(Boolean).join("\n");
-}
-function renderIssueSummary(result) {
-  const issues = [
-    ...result.extractedItem.missingFields.map((field) => `Missing: ${field}`),
-    ...result.extractedItem.uncertainties.map((field) => `Uncertain: ${field}`)
-  ];
-  return issues.length === 0 ? "" : issues.join("\n");
-}
-function headingFor(marketplace) {
-  switch (marketplace) {
-    case "ebay":
-      return "eBay";
-    case "mercari":
-      return "Mercari";
-    case "facebook-marketplace":
-      return "Facebook Marketplace";
-    case "craigslist":
-      return "Craigslist";
-    case "tcgplayer":
-      return "TCGPlayer";
-    default:
-      return marketplace;
-  }
-}
-
-// src/core/marketplaces/shared.ts
-function buildBaseListing(marketplace, item, options) {
-  const title = clampTitle([options.titlePrefix, item.title].filter(Boolean).join(" "), options.maxTitleLength);
-  const bullets = buildBullets(item);
-  const itemSpecifics = buildItemSpecifics(item);
-  const description = [item.description, bullets.map((bullet) => `- ${bullet}`).join("\n")].join("\n\n");
-  const notesToSeller = options.notesToSeller ?? [];
-  return {
-    bullets,
-    copyBlock: buildCopyBlock(title, description, itemSpecifics, notesToSeller),
-    description,
-    itemSpecifics,
-    marketplace,
-    notesToSeller,
-    title
-  };
-}
-function buildBullets(item) {
-  return Object.entries(item.attributes).slice(0, 4).map(([key, value]) => `${startCase(key)}: ${value}`);
-}
-function buildCopyBlock(title, description, itemSpecifics, notesToSeller) {
-  const specificsBlock = Object.entries(itemSpecifics).map(([key, value]) => `${key}: ${value}`).join("\n");
-  const notesBlock = notesToSeller.length === 0 ? "" : `
-
-Notes to seller:
-${notesToSeller.map((note) => `- ${note}`).join("\n")}`;
-  return `Title: ${title}
-
-Description:
-${description}
-
-Item specifics:
-${specificsBlock}${notesBlock}`;
-}
-function buildItemSpecifics(item) {
-  const specifics = {
-    Category: item.category,
-    Condition: startCase(item.condition)
-  };
-  for (const [key, value] of Object.entries(item.attributes)) {
-    specifics[startCase(key)] = value;
-  }
-  return specifics;
-}
-function clampTitle(value, maxLength) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-  const truncated = normalized.slice(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(" ");
-  return (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated).trim();
-}
-function startCase(value) {
-  return value.replace(/[-_]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-// src/core/marketplaces/craigslist.ts
-function renderCraigslistListing(item) {
-  return buildBaseListing("craigslist", item, {
-    maxTitleLength: 120,
-    notesToSeller: ["Add location, contact preference, and delivery notes before posting to Craigslist."]
-  });
-}
-
-// src/core/marketplaces/ebay.ts
-function renderEbayListing(item) {
-  return buildBaseListing("ebay", item, {
-    maxTitleLength: 80,
-    notesToSeller: ["Review shipping profile and item specifics before posting to eBay."]
-  });
-}
-
-// src/core/marketplaces/facebookMarketplace.ts
-function renderFacebookMarketplaceListing(item) {
-  return buildBaseListing("facebook-marketplace", item, {
-    maxTitleLength: 100,
-    notesToSeller: ["Add pickup or delivery details in the Facebook Marketplace form."]
-  });
-}
-
-// src/core/marketplaces/mercari.ts
-function renderMercariListing(item) {
-  return buildBaseListing("mercari", item, {
-    maxTitleLength: 80,
-    notesToSeller: ["Double-check Mercari category mapping and shipping method before posting."]
-  });
-}
-
-// src/core/marketplaces/tcgplayer.ts
-function renderTcgplayerListing(item) {
-  const listing = buildBaseListing("tcgplayer", item, {
-    maxTitleLength: 255,
-    notesToSeller: ["Confirm print, language, and finish match the card before posting to TCGPlayer."]
-  });
-  return {
-    ...listing,
-    description: listing.description.slice(0, 5e3),
-    copyBlock: listing.copyBlock.slice(0, 7e3)
-  };
-}
-
-// src/core/generateMarketplaceListings.ts
-function generateMarketplaceListings(extractedItem, requestedMarketplaces) {
-  const normalizedItem = normalizeExtractedItem(extractedItem);
-  if (normalizedItem.missingFields.length > 0 || normalizedItem.uncertainties.length > 0) {
-    return ListingGenerationResultSchema.parse({
-      extractedItem: normalizedItem,
-      humanReadable: renderHumanReadable({
-        extractedItem: normalizedItem,
-        listings: [],
-        schemaVersion,
-        skippedMarketplaces: [],
-        status: "needs_input"
-      }),
-      listings: [],
-      schemaVersion,
-      skippedMarketplaces: [],
-      status: "needs_input"
-    });
-  }
-  const listings = [];
-  const skippedMarketplaces = [];
-  for (const marketplace of new Set(requestedMarketplaces)) {
-    if (marketplace === "tcgplayer") {
-      const tcg = detectTcgEligibility(normalizedItem);
-      if (!tcg.eligible) {
-        skippedMarketplaces.push({ marketplace, reason: tcg.reason });
-        continue;
-      }
-      listings.push(renderTcgplayerListing(normalizedItem));
-      continue;
-    }
-    listings.push(renderListing(marketplace, normalizedItem));
-  }
-  const status = listings.length > 0 ? "ready" : "needs_input";
-  return ListingGenerationResultSchema.parse({
-    extractedItem: normalizedItem,
-    humanReadable: renderHumanReadable({
-      extractedItem: normalizedItem,
-      listings,
-      schemaVersion,
-      skippedMarketplaces,
-      status
-    }),
-    listings,
-    schemaVersion,
-    skippedMarketplaces,
-    status
-  });
-}
-function renderListing(marketplace, item) {
-  switch (marketplace) {
-    case "ebay":
-      return renderEbayListing(item);
-    case "mercari":
-      return renderMercariListing(item);
-    case "facebook-marketplace":
-      return renderFacebookMarketplaceListing(item);
-    case "craigslist":
-      return renderCraigslistListing(item);
-  }
-}
+import { readFile } from "fs/promises";
 
 // src/core/review/interactiveReview.ts
 import { checkbox, confirm, input, select } from "@inquirer/prompts";
@@ -612,7 +178,7 @@ async function collectInteractiveInputs(dependencies = {
   input
 }) {
   const images = await dependencies.input({
-    message: "Enter local image paths or image URLs, comma-separated"
+    message: "Enter hosted image URLs, comma-separated"
   });
   const selectedMarketplaces = await dependencies.checkbox({
     choices: marketplaces.map((marketplace) => ({
@@ -623,7 +189,7 @@ async function collectInteractiveInputs(dependencies = {
     message: "Select marketplaces to target"
   });
   return {
-    images: images.split(",").map((value) => value.trim()).filter(Boolean),
+    imageUrls: images.split(",").map((value) => value.trim()).filter(Boolean),
     marketplaces: selectedMarketplaces
   };
 }
@@ -637,13 +203,19 @@ async function reviewExtractedItem(item, dependencies = {
 async function reviewExtractedItemWithPrompts(item, dependencies) {
   const review = {
     ...item,
+    attributes: parseAttributes(
+      await dependencies.input({
+        default: serializeAttributes(item.attributes),
+        message: "Attributes (key=value, comma-separated)"
+      })
+    ),
     category: await dependencies.input({
       default: item.category,
       message: "Category"
     }),
     condition: await dependencies.select({
-      choices: conditions.map((condition) => ({ name: condition, value: condition })),
-      default: item.condition,
+      choices: [{ name: "unknown", value: "" }, ...conditions.map((condition) => ({ name: condition, value: condition }))],
+      default: item.condition || "",
       message: "Condition"
     }),
     description: await dependencies.input({
@@ -653,13 +225,7 @@ async function reviewExtractedItemWithPrompts(item, dependencies) {
     title: await dependencies.input({
       default: item.title,
       message: "Title"
-    }),
-    attributes: parseAttributes(
-      await dependencies.input({
-        default: serializeAttributes(item.attributes),
-        message: "Attributes (key=value, comma-separated)"
-      })
-    )
+    })
   };
   const unresolvedUncertainties = parseCommaSeparatedValues(
     await dependencies.input({
@@ -702,10 +268,9 @@ async function reviewExtractedItemWithPrompts(item, dependencies) {
   return refreshSignals(review, unresolvedUncertainties);
 }
 function refreshSignals(item, uncertainties) {
-  const missingFields = [...requiredFieldChecks(item), ...requiredTcgFieldChecks(item)];
   return normalizeExtractedItem({
     ...item,
-    missingFields,
+    missingFields: [...requiredFieldChecks(item), ...requiredTcgFieldChecks(item)],
     uncertainties
   });
 }
@@ -747,18 +312,52 @@ function serializeAttributes(attributes) {
 
 // src/commands/generate.ts
 async function runGenerateCommand(options, dependencies = {}) {
-  const readTextFile = dependencies.readTextFile ?? ((path) => readFile2(path, "utf8"));
+  const readTextFile = dependencies.readTextFile ?? ((path) => readFile(path, "utf8"));
   const reviewer = dependencies.reviewer ?? reviewExtractedItem;
   const collectInputs = dependencies.collectInputs ?? collectInteractiveInputs;
   const requested = await resolveRequestedInput(options, readTextFile, collectInputs);
   const requestedOutput = OutputFormatSchema.parse(
     options.output ?? requested.output ?? defaultOutputFormat(options.interactive)
   );
-  const extractedItem = requested.extractedItem ?? await (dependencies.extractor ?? new OpenAIItemExtractionProvider()).extractFromImages(
-    requested.images
+  const result = options.interactive ? await callCrosslistApi(
+    {
+      extractedItem: await reviewer(
+        requested.extractedItem ?? (await callCrosslistApi(
+          {
+            imageUrls: assertRemoteImageUrls(requested.imageUrls),
+            marketplaces: requested.marketplaces
+          },
+          {
+            apiBaseUrl: options.apiBaseUrl,
+            fetchImpl: dependencies.fetchImpl
+          }
+        )).extractedItem
+      ),
+      marketplaces: requested.marketplaces
+    },
+    {
+      apiBaseUrl: options.apiBaseUrl,
+      fetchImpl: dependencies.fetchImpl
+    }
+  ) : requested.extractedItem ? await callCrosslistApi(
+    {
+      extractedItem: requested.extractedItem,
+      marketplaces: requested.marketplaces
+    },
+    {
+      apiBaseUrl: options.apiBaseUrl,
+      fetchImpl: dependencies.fetchImpl
+    }
+  ) : await callCrosslistApi(
+    {
+      imageUrls: assertRemoteImageUrls(requested.imageUrls),
+      marketplaces: requested.marketplaces
+    },
+    {
+      apiBaseUrl: options.apiBaseUrl,
+      fetchImpl: dependencies.fetchImpl
+    }
   );
-  const reviewedItem = options.interactive ? await reviewer(extractedItem) : extractedItem;
-  const result = generateMarketplaceListings(reviewedItem, requested.marketplaces);
   return {
     exitCode: result.status === "ready" ? 0 : 1,
     output: formatOutput2(result, requestedOutput),
@@ -770,7 +369,7 @@ async function resolveRequestedInput(options, readTextFile, collectInputs) {
     const parsed = GenerateFileInputSchema.parse(JSON.parse(await readTextFile(options.input)));
     return {
       extractedItem: parsed.extractedItem,
-      images: parsed.images ?? [],
+      imageUrls: parsed.imageUrls ?? [],
       marketplaces: assertMarketplaces(
         options.marketplaces ? parseMarketplaces(options.marketplaces) : parsed.marketplaces ?? [...marketplaces]
       ),
@@ -780,14 +379,14 @@ async function resolveRequestedInput(options, readTextFile, collectInputs) {
   if (options.interactive && (!options.images || options.images.length === 0)) {
     const interactive = await collectInputs();
     return {
-      images: assertImages(interactive.images),
+      imageUrls: interactive.imageUrls,
       marketplaces: assertMarketplaces(
         options.marketplaces ? parseMarketplaces(options.marketplaces) : interactive.marketplaces
       )
     };
   }
   return {
-    images: assertImages(options.images ?? []),
+    imageUrls: options.images ?? [],
     marketplaces: assertMarketplaces(parseMarketplaces(options.marketplaces))
   };
 }
@@ -796,9 +395,7 @@ function parseMarketplaces(value) {
     return [...marketplaces];
   }
   const requested = value.split(",").map((entry) => entry.trim()).filter(Boolean);
-  const valid = requested.filter(
-    (entry) => marketplaces.includes(entry)
-  );
+  const valid = requested.filter((entry) => marketplaces.includes(entry));
   const invalid = requested.filter((entry) => !marketplaces.includes(entry));
   if (invalid.length > 0) {
     throw new Error(`Invalid marketplaces: ${invalid.join(", ")}`);
@@ -828,17 +425,21 @@ function toSerializableResult(result, includeHumanReadable) {
   void humanReadable;
   return jsonSafeResult;
 }
-function assertImages(images) {
-  if (images.length === 0) {
-    throw new Error("Provide --images, --input, or --interactive.");
-  }
-  return images;
-}
 function assertMarketplaces(requested) {
   if (requested.length === 0) {
     throw new Error("Select at least one marketplace.");
   }
   return requested;
+}
+function assertRemoteImageUrls(imageUrls) {
+  if (imageUrls.length === 0) {
+    throw new Error("Provide --images, --input, or --interactive.");
+  }
+  const localInputs = imageUrls.filter((imageUrl) => !/^https?:\/\//i.test(imageUrl));
+  if (localInputs.length > 0) {
+    throw new Error("Image extraction is URL-only in v1. Provide hosted image URLs instead of local file paths.");
+  }
+  return imageUrls;
 }
 
 // src/cli.ts
@@ -851,8 +452,8 @@ function buildCli(dependencies = {}) {
   const runGenerate = dependencies.runGenerateCommand ?? runGenerateCommand;
   const runDoctor2 = dependencies.runDoctorCommand ?? runDoctorCommand;
   const program = new Command();
-  program.name("crosslist").description("Generate cross-marketplace listing copy from product images.").version("1.0.0");
-  program.command("generate").description("Generate marketplace-ready listings from images or a JSON input file.").option("--interactive", "Run the seller review flow").option("--images <images...>", "Local image paths or remote URLs").option("--input <path>", "Path to a JSON input file").option("--marketplaces <marketplaces>", "Comma-separated marketplaces").option("--output <format>", "text, json, or both").action(async (options) => {
+  program.name("crosslist").description("Generate cross-marketplace listing copy from hosted product images.").version("1.0.0");
+  program.command("generate").description("Generate marketplace-ready listings from hosted image URLs or a JSON input file.").option("--interactive", "Run the seller review flow").option("--images <images...>", "Hosted image URLs").option("--input <path>", "Path to a JSON input file").option("--marketplaces <marketplaces>", "Comma-separated marketplaces").option("--output <format>", "text, json, or both").option("--api-base-url <url>", "Override the SatStash API base URL").action(async (options) => {
     await runCommand(async () => {
       const result = await runGenerate(options);
       writeStdout(`${result.output}
@@ -860,9 +461,10 @@ function buildCli(dependencies = {}) {
       setExitCode(result.exitCode);
     }, writeStderr, setExitCode);
   });
-  program.command("doctor").description("Check runtime prerequisites for crosslist.").argument("[images...]", "Optional images to validate").option("--images <images...>", "Local image paths or remote URLs").option("--output <format>", "text, json, or both", "text").action(async (images, options) => {
+  program.command("doctor").description("Check runtime prerequisites for crosslist.").argument("[images...]", "Optional hosted image URLs to validate").option("--images <images...>", "Hosted image URLs").option("--output <format>", "text, json, or both", "text").option("--api-base-url <url>", "Override the SatStash API base URL").action(async (images, options) => {
     await runCommand(async () => {
       const result = await runDoctor2({
+        apiBaseUrl: options.apiBaseUrl,
         images: [...images, ...options.images ?? []],
         output: options.output
       });

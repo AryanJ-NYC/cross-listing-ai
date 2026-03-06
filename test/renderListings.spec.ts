@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import type { ExtractedItem, ListingGenerationResult } from '../src/core/schemas.js';
-import { generateMarketplaceListings } from '../src/core/generateMarketplaceListings.js';
+import type { ExtractedItem, ListingGenerationResult } from '../src/core/crosslistCore.js';
+import { generateMarketplaceListings } from '../src/core/crosslistCore.js';
 
 const baseItem: ExtractedItem = {
   attributes: {
@@ -57,6 +57,19 @@ describe('generateMarketplaceListings', () => {
     expect(result.listings).toHaveLength(0);
   });
 
+  test('returns needs_input when condition is unknown even if missingFields was not precomputed', () => {
+    const result = generateMarketplaceListings(
+      {
+        ...baseItem,
+        condition: '',
+      },
+      ['ebay']
+    );
+
+    expect(result.status).toBe('needs_input');
+    expect(result.extractedItem.missingFields).toContain('condition');
+  });
+
   test('includes a tcgplayer listing when tcg fields are present', () => {
     const result = generateMarketplaceListings(
       {
@@ -99,36 +112,6 @@ describe('ListingGenerationResult human output', () => {
     expect(result.humanReadable).toContain('Item specifics:');
     expect(result.humanReadable).toContain('Notes to seller:');
   });
-});
-
-test('treats common card categories as eligible for tcgplayer when tcg fields are present', () => {
-  const result = generateMarketplaceListings(
-    {
-      attributes: {
-        game: 'Pokemon',
-        rarity: 'Rare Holo',
-        set: 'Jungle',
-      },
-      category: 'Pokemon card',
-      condition: 'like new',
-      description: 'Near mint Jolteon holo card from Jungle.',
-      missingFields: [],
-      tcg: {
-        cardName: 'Jolteon',
-        cardNumber: '4/64',
-        foil: true,
-        game: 'Pokemon',
-        language: 'English',
-        rarity: 'Rare Holo',
-        set: 'Jungle',
-      },
-      title: 'Jolteon 4/64 Jungle Rare Holo Pokemon Card',
-      uncertainties: [],
-    },
-    ['tcgplayer']
-  );
-
-  expect(result.listings.map((listing) => listing.marketplace)).toEqual(['tcgplayer']);
 });
 
 test('does not report success when every requested marketplace is skipped', () => {

@@ -1,11 +1,16 @@
 # Cross-Marketplace Listing Generator
 
-`cmd-market` Phase 1a ships as a standalone ClawHub skill plus a bundled Node CLI. It turns product photos into marketplace-ready listing copy for `eBay`, `Mercari`, `Facebook Marketplace`, `Craigslist`, and `TCGPlayer` when the item is clearly trading card inventory.
+`crosslist` is an open-source `cmd-market` package that ships two things from one repo:
+
+- a standalone CLI for sellers and agents
+- a reusable core library that SatStash can consume as a dependency
+
+The CLI is a thin wrapper over SatStash public API generation endpoints and uses the shared core locally for review and formatting.
 
 ## What it does
 
-- accepts local image paths, remote image URLs, or JSON input
-- extracts structured item details with OpenAI multimodal
+- accepts hosted image URLs or JSON input
+- calls SatStash `POST /api/public/v1/crosslist/generate`
 - pauses for seller review in interactive mode
 - generates marketplace-specific listing text
 - emits human-readable output, structured JSON, or both
@@ -16,11 +21,12 @@
 - `no pricing`
 - `no marketplace posting APIs`
 - `no marketplace auth`
+- `URL-only` for image extraction in `v1`
 
 ## Requirements
 
 - `Node 20+`
-- `OPENAI_API_KEY` for image extraction
+- network access to `https://satstash.io/api/public/v1`
 
 ## Install
 
@@ -32,13 +38,13 @@ pnpm build
 ## Commands
 
 ```bash
-crosslist generate --interactive
-crosslist generate --input ./examples/walkman.json
-crosslist generate --input ./examples/walkman.json --output both
-crosslist generate --input ./examples/pokemon-card.json --output json
-crosslist doctor
-crosslist doctor --images ./path/to/item.jpg
-crosslist doctor --output json
+pnpm dev -- generate --interactive
+pnpm dev -- generate --input ./examples/walkman.json
+pnpm dev -- generate --input ./examples/walkman.json --output both
+pnpm dev -- generate --images https://cdn.example.com/item.jpg --marketplaces ebay,mercari --output json
+pnpm dev -- doctor
+pnpm dev -- doctor --images https://cdn.example.com/item.jpg
+pnpm dev -- doctor --api-base-url http://localhost:3000 --output json
 ```
 
 Defaults:
@@ -46,10 +52,12 @@ Defaults:
 - `generate --interactive` defaults to text output for seller review.
 - non-interactive `generate` defaults to JSON output for agents and automation, without duplicating the `humanReadable` block.
 - `doctor` defaults to text output and supports `--output json` or `--output both`.
+- production API base URL defaults to `https://satstash.io`, but `--api-base-url` wins over `CROSSLIST_API_BASE_URL`.
+- `doctor` verifies that the target API actually exposes `/api/public/v1/crosslist/generate`, not just that the docs URL loads.
 
 ## JSON file mode
 
-You can pass either `images` or a fully reviewed `extractedItem`.
+You can pass either `imageUrls` or a fully reviewed `extractedItem`.
 
 ```json
 {
@@ -70,6 +78,19 @@ You can pass either `images` or a fully reviewed `extractedItem`.
 }
 ```
 
+## Library usage
+
+SatStash and other consumers can import the shared core from the package root:
+
+```ts
+import {
+  generateMarketplaceListings,
+  marketplaces,
+  renderHumanReadable,
+  type ExtractedItem,
+} from '@cmd-market/crosslist';
+```
+
 ## Development
 
 ```bash
@@ -78,11 +99,17 @@ pnpm typecheck
 pnpm build
 ```
 
-## Publish
+## Public API
 
-The repo root is the publishable skill bundle.
+The CLI wraps:
 
-```bash
-pnpm build
-clawhub publish . --slug cross-marketplace-listing-generator --name "Cross-Marketplace Listing Generator" --version 1.0.0 --tags latest,ebay,mercari,facebook-marketplace,craigslist,tcgplayer,crosslist,reselling,ecommerce
+```text
+POST /api/public/v1/crosslist/generate
 ```
+
+Request accepts exactly one of:
+
+- `image_urls` plus `marketplaces`
+- `extracted_item` plus `marketplaces`
+
+Success returns a public API envelope with `data` and `meta`. The CLI unwraps that envelope and renders local text/JSON output.

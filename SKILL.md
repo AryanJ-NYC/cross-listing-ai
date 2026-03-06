@@ -16,18 +16,19 @@ Use this skill when a seller wants to turn product images into listing copy for 
 - Do not invent pricing, shipping, or condition details that are not present in the source images or seller review.
 - Only generate `TCGPlayer` output when the item is clearly a trading card and card-specific fields are present.
 - If command execution fails, run `node ./dist/cli.js doctor --output json` before retrying the generate flow.
+- Image extraction is `URL-only` in `v1`. Reject local file paths and ask for hosted image URLs instead.
 
 ## Examples
 
 ```bash
 node ./dist/cli.js generate --interactive
 node ./dist/cli.js generate --input ./examples/pokemon-card.json
-node ./dist/cli.js generate --input ./examples/pokemon-card.json --output both
+node ./dist/cli.js generate --images https://cdn.example.com/item.jpg --marketplaces ebay,mercari --output json
 node ./dist/cli.js doctor --output json
 ```
 
 ## Notes
 
-- Runtime requires `OPENAI_API_KEY` for image extraction.
+- Runtime does not require a local OpenAI key; generation is handled by SatStash public API.
 - `v1a` is `US English` only.
 - `v1a` does not post listings to marketplace APIs.

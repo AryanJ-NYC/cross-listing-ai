@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, test } from 'vitest';
 
-import { GenerateFileInputSchema } from '../src/core/schemas.js';
+import { GenerateFileInputSchema } from '../src/core/crosslistCore.js';
 
 describe('example and fixture JSON files', () => {
   test.each([

@@ -1,5 +1,5 @@
-import type { ExtractedItem } from '../schemas.js';
-import { buildBaseListing } from './shared.js';
+import type { ExtractedItem } from '../schemas';
+import { buildBaseListing } from './shared';
 
 export function renderCraigslistListing(item: ExtractedItem) {
   return buildBaseListing('craigslist', item, {

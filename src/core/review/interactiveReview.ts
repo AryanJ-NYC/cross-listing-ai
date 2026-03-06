@@ -1,8 +1,6 @@
 import { checkbox, confirm, input, select } from '@inquirer/prompts';
 
-import { type ExtractedItem, type Marketplace, conditions, marketplaces } from '../schemas.js';
-import { looksLikeTcgInventory } from '../detectTcgEligibility.js';
-import { normalizeExtractedItem } from '../normalizeExtractedItem.js';
+import { conditions, type ExtractedItem, looksLikeTcgInventory, marketplaces, type Marketplace, normalizeExtractedItem } from '../crosslistCore.js';
 
 type PromptDependencies = {
   checkbox: typeof checkbox;
@@ -22,7 +20,7 @@ export async function collectInteractiveInputs(
   }
 ) {
   const images = await dependencies.input({
-    message: 'Enter local image paths or image URLs, comma-separated',
+    message: 'Enter hosted image URLs, comma-separated',
   });
   const selectedMarketplaces = await dependencies.checkbox({
     choices: marketplaces.map((marketplace) => ({
@@ -34,7 +32,7 @@ export async function collectInteractiveInputs(
   });
 
   return {
-    images: images
+    imageUrls: images
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
@@ -59,13 +57,19 @@ async function reviewExtractedItemWithPrompts(
 ) {
   const review = {
     ...item,
+    attributes: parseAttributes(
+      await dependencies.input({
+        default: serializeAttributes(item.attributes),
+        message: 'Attributes (key=value, comma-separated)',
+      })
+    ),
     category: await dependencies.input({
       default: item.category,
       message: 'Category',
     }),
     condition: (await dependencies.select({
-      choices: conditions.map((condition) => ({ name: condition, value: condition })),
-      default: item.condition,
+      choices: [{ name: 'unknown', value: '' }, ...conditions.map((condition) => ({ name: condition, value: condition }))],
+      default: item.condition || '',
       message: 'Condition',
     })) as ExtractedItem['condition'],
     description: await dependencies.input({
@@ -76,12 +80,6 @@ async function reviewExtractedItemWithPrompts(
       default: item.title,
       message: 'Title',
     }),
-    attributes: parseAttributes(
-      await dependencies.input({
-        default: serializeAttributes(item.attributes),
-        message: 'Attributes (key=value, comma-separated)',
-      })
-    ),
   };
   const unresolvedUncertainties = parseCommaSeparatedValues(
     await dependencies.input({
@@ -127,11 +125,9 @@ async function reviewExtractedItemWithPrompts(
 }
 
 function refreshSignals(item: ExtractedItem, uncertainties: string[]): ExtractedItem {
-  const missingFields = [...requiredFieldChecks(item), ...requiredTcgFieldChecks(item)];
-
   return normalizeExtractedItem({
     ...item,
-    missingFields,
+    missingFields: [...requiredFieldChecks(item), ...requiredTcgFieldChecks(item)],
     uncertainties,
   });
 }

@@ -14,9 +14,6 @@ importers:
       commander:
         specifier: ^13.1.0
         version: 13.1.0
-      openai:
-        specifier: ^5.16.0
-        version: 5.23.2(zod@3.25.76)
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -683,18 +680,6 @@ packages:
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
     engines: {node: '>=0.10.0'}
-
-  openai@5.23.2:
-    resolution: {integrity: sha512-MQBzmTulj+MM5O8SKEk/gL8a7s5mktS9zUtAkU257WjvobGc9nKcBuVwjyEEcb9SI8a8Y2G/mzn3vm9n1Jlleg==}
-    hasBin: true
-    peerDependencies:
-      ws: ^8.18.0
-      zod: ^3.23.8
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
@@ -1459,10 +1444,6 @@ snapshots:
   nanoid@3.3.11: {}
 
   object-assign@4.1.1: {}
-
-  openai@5.23.2(zod@3.25.76):
-    optionalDependencies:
-      zod: 3.25.76
 
   pathe@2.0.3: {}
 

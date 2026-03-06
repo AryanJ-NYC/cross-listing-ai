@@ -1,13 +1,30 @@
 {
   "name": "@cmd-market/crosslist",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cross-marketplace listing generator for cmd-market",
   "license": "MIT",
   "private": false,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "crosslist": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "SKILL.md",
+    "LICENSE",
+    "examples",
+    "fixtures"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -21,7 +38,6 @@
   "dependencies": {
     "@inquirer/prompts": "^7.3.2",
     "commander": "^13.1.0",
-    "openai": "^5.16.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

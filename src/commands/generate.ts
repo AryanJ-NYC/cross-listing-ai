@@ -1,22 +1,20 @@
 import { readFile } from 'node:fs/promises';
 
-import { generateMarketplaceListings } from '../core/generateMarketplaceListings.js';
-import { OpenAIItemExtractionProvider } from '../core/providers/openai.js';
-import type { ItemExtractionProvider } from '../core/providers/types.js';
-import { collectInteractiveInputs, reviewExtractedItem } from '../core/review/interactiveReview.js';
+import { callCrosslistApi } from '../core/api.js';
 import {
   type ExtractedItem,
-  type GenerateFileInput,
-  type ListingGenerationResult,
-  type Marketplace,
-  type OutputFormat,
   GenerateFileInputSchema,
-  OutputFormatSchema,
+  type ListingGenerationResult,
   marketplaces,
-} from '../core/schemas.js';
+  type Marketplace,
+  OutputFormatSchema,
+  type OutputFormat,
+} from '../core/crosslistCore.js';
+import { collectInteractiveInputs, reviewExtractedItem } from '../core/review/interactiveReview.js';
 
 export async function runGenerateCommand(
   options: {
+    apiBaseUrl?: string;
     images?: string[];
     input?: string;
     interactive?: boolean;
@@ -24,27 +22,65 @@ export async function runGenerateCommand(
     output?: string;
   },
   dependencies: {
-    extractor?: ItemExtractionProvider;
+    collectInputs?: typeof collectInteractiveInputs;
+    fetchImpl?: typeof fetch;
     readTextFile?: (path: string) => Promise<string>;
     reviewer?: typeof reviewExtractedItem;
-    collectInputs?: typeof collectInteractiveInputs;
   } = {}
 ) {
   const readTextFile = dependencies.readTextFile ?? ((path: string) => readFile(path, 'utf8'));
   const reviewer = dependencies.reviewer ?? reviewExtractedItem;
   const collectInputs = dependencies.collectInputs ?? collectInteractiveInputs;
-
   const requested = await resolveRequestedInput(options, readTextFile, collectInputs);
   const requestedOutput = OutputFormatSchema.parse(
     options.output ?? requested.output ?? defaultOutputFormat(options.interactive)
   );
-  const extractedItem =
-    requested.extractedItem ??
-    (await (dependencies.extractor ?? new OpenAIItemExtractionProvider()).extractFromImages(
-      requested.images
-    ));
-  const reviewedItem = options.interactive ? await reviewer(extractedItem) : extractedItem;
-  const result = generateMarketplaceListings(reviewedItem, requested.marketplaces);
+  const result = options.interactive
+    ? await callCrosslistApi(
+        {
+          extractedItem: await reviewer(
+            requested.extractedItem ??
+              (
+                await callCrosslistApi(
+                  {
+                    imageUrls: assertRemoteImageUrls(requested.imageUrls),
+                    marketplaces: requested.marketplaces,
+                  },
+                  {
+                    apiBaseUrl: options.apiBaseUrl,
+                    fetchImpl: dependencies.fetchImpl,
+                  }
+                )
+              ).extractedItem
+          ),
+          marketplaces: requested.marketplaces,
+        },
+        {
+          apiBaseUrl: options.apiBaseUrl,
+          fetchImpl: dependencies.fetchImpl,
+        }
+      )
+    : requested.extractedItem
+      ? await callCrosslistApi(
+          {
+            extractedItem: requested.extractedItem,
+            marketplaces: requested.marketplaces,
+          },
+          {
+            apiBaseUrl: options.apiBaseUrl,
+            fetchImpl: dependencies.fetchImpl,
+          }
+        )
+      : await callCrosslistApi(
+          {
+            imageUrls: assertRemoteImageUrls(requested.imageUrls),
+            marketplaces: requested.marketplaces,
+          },
+          {
+            apiBaseUrl: options.apiBaseUrl,
+            fetchImpl: dependencies.fetchImpl,
+          }
+        );
 
   return {
     exitCode: result.status === 'ready' ? 0 : 1,
@@ -64,15 +100,15 @@ async function resolveRequestedInput(
   collectInputs: typeof collectInteractiveInputs
 ): Promise<{
   extractedItem?: ExtractedItem;
-  images: string[];
+  imageUrls: string[];
   marketplaces: Marketplace[];
   output?: OutputFormat;
 }> {
   if (options.input) {
-    const parsed = GenerateFileInputSchema.parse(JSON.parse(await readTextFile(options.input))) as GenerateFileInput;
+    const parsed = GenerateFileInputSchema.parse(JSON.parse(await readTextFile(options.input)));
     return {
       extractedItem: parsed.extractedItem,
-      images: parsed.images ?? [],
+      imageUrls: parsed.imageUrls ?? [],
       marketplaces: assertMarketplaces(
         options.marketplaces ? parseMarketplaces(options.marketplaces) : parsed.marketplaces ?? [...marketplaces]
       ),
@@ -83,7 +119,7 @@ async function resolveRequestedInput(
   if (options.interactive && (!options.images || options.images.length === 0)) {
     const interactive = await collectInputs();
     return {
-      images: assertImages(interactive.images),
+      imageUrls: interactive.imageUrls,
       marketplaces: assertMarketplaces(
         options.marketplaces ? parseMarketplaces(options.marketplaces) : interactive.marketplaces
       ),
@@ -91,7 +127,7 @@ async function resolveRequestedInput(
   }
 
   return {
-    images: assertImages(options.images ?? []),
+    imageUrls: options.images ?? [],
     marketplaces: assertMarketplaces(parseMarketplaces(options.marketplaces)),
   };
 }
@@ -105,9 +141,7 @@ function parseMarketplaces(value: string | undefined): Marketplace[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
-  const valid = requested.filter((entry): entry is Marketplace =>
-    marketplaces.includes(entry as Marketplace)
-  );
+  const valid = requested.filter((entry): entry is Marketplace => marketplaces.includes(entry as Marketplace));
   const invalid = requested.filter((entry) => !marketplaces.includes(entry as Marketplace));
 
   if (invalid.length > 0) {
@@ -143,18 +177,23 @@ function toSerializableResult(result: ListingGenerationResult, includeHumanReada
   return jsonSafeResult;
 }
 
-function assertImages(images: string[]) {
-  if (images.length === 0) {
-    throw new Error('Provide --images, --input, or --interactive.');
-  }
-
-  return images;
-}
-
 function assertMarketplaces(requested: Marketplace[]) {
   if (requested.length === 0) {
     throw new Error('Select at least one marketplace.');
   }
 
   return requested;
+}
+
+function assertRemoteImageUrls(imageUrls: string[]) {
+  if (imageUrls.length === 0) {
+    throw new Error('Provide --images, --input, or --interactive.');
+  }
+
+  const localInputs = imageUrls.filter((imageUrl) => !/^https?:\/\//i.test(imageUrl));
+  if (localInputs.length > 0) {
+    throw new Error('Image extraction is URL-only in v1. Provide hosted image URLs instead of local file paths.');
+  }
+
+  return imageUrls;
 }

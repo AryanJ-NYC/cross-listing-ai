@@ -1,4 +1,4 @@
-import type { ExtractedItem, Listing, Marketplace } from '../schemas.js';
+import type { ExtractedItem, Listing, Marketplace } from '../schemas';
 
 export function buildBaseListing(
   marketplace: Marketplace,

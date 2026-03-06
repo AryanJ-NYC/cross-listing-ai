@@ -1,5 +1,5 @@
-import type { ExtractedItem } from '../schemas.js';
-import { buildBaseListing } from './shared.js';
+import type { ExtractedItem } from '../schemas';
+import { buildBaseListing } from './shared';
 
 export function renderTcgplayerListing(item: ExtractedItem) {
   const listing = buildBaseListing('tcgplayer', item, {
@@ -9,7 +9,7 @@ export function renderTcgplayerListing(item: ExtractedItem) {
 
   return {
     ...listing,
-    description: listing.description.slice(0, 5000),
     copyBlock: listing.copyBlock.slice(0, 7000),
+    description: listing.description.slice(0, 5000),
   };
 }

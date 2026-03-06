@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/cli.ts'],
+  entry: ['src/index.ts', 'src/cli.ts'],
   clean: true,
-  dts: false,
+  dts: true,
   format: ['esm'],
   minify: false,
   outDir: 'dist',

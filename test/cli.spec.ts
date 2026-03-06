@@ -35,7 +35,7 @@ describe('cli', () => {
       },
     });
 
-    await program.parseAsync(['node', 'crosslist', 'generate', '--images', 'demo.jpg']);
+    await program.parseAsync(['node', 'crosslist', 'generate', '--images', 'https://example.com/demo.jpg']);
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain('Invalid marketplaces: nope');

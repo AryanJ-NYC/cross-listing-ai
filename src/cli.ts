@@ -27,17 +27,18 @@ export function buildCli(dependencies: CliDependencies = {}) {
 
   program
     .name('crosslist')
-    .description('Generate cross-marketplace listing copy from product images.')
+    .description('Generate cross-marketplace listing copy from hosted product images.')
     .version('1.0.0');
 
   program
     .command('generate')
-    .description('Generate marketplace-ready listings from images or a JSON input file.')
+    .description('Generate marketplace-ready listings from hosted image URLs or a JSON input file.')
     .option('--interactive', 'Run the seller review flow')
-    .option('--images <images...>', 'Local image paths or remote URLs')
+    .option('--images <images...>', 'Hosted image URLs')
     .option('--input <path>', 'Path to a JSON input file')
     .option('--marketplaces <marketplaces>', 'Comma-separated marketplaces')
     .option('--output <format>', 'text, json, or both')
+    .option('--api-base-url <url>', 'Override the SatStash API base URL')
     .action(async (options) => {
       await runCommand(async () => {
         const result = await runGenerate(options);
@@ -49,12 +50,14 @@ export function buildCli(dependencies: CliDependencies = {}) {
   program
     .command('doctor')
     .description('Check runtime prerequisites for crosslist.')
-    .argument('[images...]', 'Optional images to validate')
-    .option('--images <images...>', 'Local image paths or remote URLs')
+    .argument('[images...]', 'Optional hosted image URLs to validate')
+    .option('--images <images...>', 'Hosted image URLs')
     .option('--output <format>', 'text, json, or both', 'text')
-    .action(async (images: string[], options: { images?: string[]; output?: string }) => {
+    .option('--api-base-url <url>', 'Override the SatStash API base URL')
+    .action(async (images: string[], options: { apiBaseUrl?: string; images?: string[]; output?: string }) => {
       await runCommand(async () => {
         const result = await runDoctor({
+          apiBaseUrl: options.apiBaseUrl,
           images: [...images, ...(options.images ?? [])],
           output: options.output,
         });

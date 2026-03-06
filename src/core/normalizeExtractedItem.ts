@@ -1,4 +1,4 @@
-import { TcgDetailsSchema, type ExtractedItem } from './schemas.js';
+import { TcgDetailsSchema, type ExtractedItem } from './schemas';
 
 type TcgLike = {
   cardName?: string | null;

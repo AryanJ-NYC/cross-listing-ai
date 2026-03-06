@@ -1,17 +1,10 @@
-import type { ListingGenerationResult } from './schemas.js';
+import type { ListingGenerationResult } from './schemas';
 
 export function renderHumanReadable(result: Omit<ListingGenerationResult, 'humanReadable'>) {
   const sections = [
     `Status: ${result.status}`,
     renderIssueSummary(result),
-    ...result.listings.map((listing) => {
-      return [
-        '',
-        headingFor(listing.marketplace),
-        '',
-        listing.copyBlock,
-      ].join('\n');
-    }),
+    ...result.listings.map((listing) => ['', headingFor(listing.marketplace), '', listing.copyBlock].join('\n')),
   ];
 
   if (result.listings.length === 0) {
@@ -22,9 +15,7 @@ export function renderHumanReadable(result: Omit<ListingGenerationResult, 'human
     sections.push(
       '',
       'Skipped marketplaces:',
-      ...result.skippedMarketplaces.map(
-        (entry) => `- ${headingFor(entry.marketplace)}: ${entry.reason}`
-      )
+      ...result.skippedMarketplaces.map((entry) => `- ${headingFor(entry.marketplace)}: ${entry.reason}`)
     );
   }
 

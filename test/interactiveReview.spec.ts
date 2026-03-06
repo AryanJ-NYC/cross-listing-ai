@@ -3,8 +3,8 @@ import { describe, expect, test } from 'vitest';
 import { collectInteractiveInputs, reviewExtractedItem } from '../src/core/review/interactiveReview.js';
 
 describe('collectInteractiveInputs', () => {
-  test('normalizes comma-separated image input and uses explicit marketplace selections', async () => {
-    const inputPrompt = Object.assign(async () => ' ./one.jpg, https://example.com/two.png ', {
+  test('normalizes comma-separated URL input and uses explicit marketplace selections', async () => {
+    const inputPrompt = Object.assign(async () => ' https://example.com/one.jpg, https://example.com/two.png ', {
       cancel: () => undefined,
     });
     const checkboxPrompt = Object.assign(async () => ['ebay', 'mercari'], {
@@ -17,17 +17,17 @@ describe('collectInteractiveInputs', () => {
     });
 
     expect(result).toEqual({
-      images: ['./one.jpg', 'https://example.com/two.png'],
+      imageUrls: ['https://example.com/one.jpg', 'https://example.com/two.png'],
       marketplaces: ['ebay', 'mercari'],
     });
   });
 
   test('lets sellers revise attributes and explicitly keep unresolved uncertainties', async () => {
     const inputValues = [
+      'brand=Pokemon, set=Jungle, language=English',
       'Pokemon card',
       'Reviewed description',
       'Reviewed title',
-      'brand=Pokemon, set=Jungle, language=English',
       'centering, surface',
       'Jolteon',
       '4/64',
@@ -62,7 +62,7 @@ describe('collectInteractiveInputs', () => {
           language: '',
           rarity: '',
           set: '',
-        },
+        } as any,
         title: 'Original title',
         uncertainties: ['centering', 'surface'],
       },

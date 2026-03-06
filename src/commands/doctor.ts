@@ -1,27 +1,29 @@
-import { stat } from 'node:fs/promises';
-
-import { isSupportedLocalImagePath } from '../core/providers/openai.js';
 import {
   type DoctorCheck,
   type DoctorResult,
   DoctorResultSchema,
   OutputFormatSchema,
   type OutputFormat,
-} from '../core/schemas.js';
+} from '../core/crosslistCore.js';
+import { resolveApiBaseUrl } from '../core/api.js';
 
-export async function runDoctor(options: {
-  env?: NodeJS.ProcessEnv;
-  imageInputs?: string[];
-  nodeVersion?: string;
-  reachabilityCheck?: (url: string) => Promise<boolean>;
-} = {}): Promise<DoctorResult> {
-  const env = options.env ?? process.env;
+export async function runDoctor(
+  options: {
+    apiSupportCheck?: (url: string) => Promise<boolean>;
+    apiBaseUrl?: string;
+    imageInputs?: string[];
+    nodeVersion?: string;
+    reachabilityCheck?: (url: string) => Promise<boolean>;
+  } = {}
+): Promise<DoctorResult> {
   const imageInputs = options.imageInputs ?? [];
+  const apiSupportCheck = options.apiSupportCheck ?? defaultApiSupportCheck;
   const reachabilityCheck = options.reachabilityCheck ?? defaultReachabilityCheck;
+  const apiBaseUrl = resolveApiBaseUrl(options.apiBaseUrl);
   const checks: DoctorCheck[] = [];
 
   checks.push(checkNodeVersion(options.nodeVersion ?? process.versions.node));
-  checks.push(checkOpenAIKey(env.OPENAI_API_KEY, imageInputs.length > 0));
+  checks.push(await checkApiBaseUrl(apiBaseUrl, apiSupportCheck));
 
   for (const input of imageInputs) {
     checks.push(await checkImageInput(input, reachabilityCheck));
@@ -40,17 +42,19 @@ export async function runDoctor(options: {
 
 export async function runDoctorCommand(
   options: {
+    apiBaseUrl?: string;
     images?: string[];
     output?: string;
   },
   dependencies: {
-    env?: NodeJS.ProcessEnv;
+    apiSupportCheck?: (url: string) => Promise<boolean>;
     nodeVersion?: string;
     reachabilityCheck?: (url: string) => Promise<boolean>;
   } = {}
 ) {
   const result = await runDoctor({
-    env: dependencies.env,
+    apiSupportCheck: dependencies.apiSupportCheck,
+    apiBaseUrl: options.apiBaseUrl,
     imageInputs: options.images,
     nodeVersion: dependencies.nodeVersion,
     reachabilityCheck: dependencies.reachabilityCheck,
@@ -64,48 +68,46 @@ export async function runDoctorCommand(
   };
 }
 
+async function checkApiBaseUrl(
+  apiBaseUrl: string,
+  apiSupportCheck: (url: string) => Promise<boolean>
+): Promise<DoctorCheck> {
+  try {
+    const url = new URL('/api/public/v1/openapi.json', apiBaseUrl).toString();
+    const reachable = await apiSupportCheck(url);
+    return {
+      message: reachable
+        ? 'Public API is reachable and exposes /crosslist/generate.'
+        : 'Public API could not be reached or does not expose /crosslist/generate.',
+      name: `api:${apiBaseUrl}`,
+      status: reachable ? 'pass' : 'fail',
+    };
+  } catch {
+    return {
+      message: 'API base URL is invalid.',
+      name: `api:${apiBaseUrl}`,
+      status: 'fail',
+    };
+  }
+}
+
 async function checkImageInput(
   input: string,
   reachabilityCheck: (url: string) => Promise<boolean>
 ): Promise<DoctorCheck> {
-  if (/^https?:\/\//i.test(input)) {
-    const reachable = await reachabilityCheck(input);
+  if (!/^https?:\/\//i.test(input)) {
     return {
-      message: reachable ? 'Remote image URL is reachable.' : 'Remote image URL could not be reached.',
-      name: `image:${input}`,
-      status: reachable ? 'pass' : 'fail',
-    };
-  }
-
-  const details = await stat(input).catch(() => null);
-  if (!details) {
-    return {
-      message: 'Local image file was not found.',
+      message: 'Image extraction is URL-only in v1. Provide a hosted image URL.',
       name: `image:${input}`,
       status: 'fail',
     };
   }
 
-  if (!details.isFile()) {
-    return {
-      message: 'Local image path must point to a file, not a directory.',
-      name: `image:${input}`,
-      status: 'fail',
-    };
-  }
-
-  if (!isSupportedLocalImagePath(input)) {
-    return {
-      message: 'Local image must use .jpg, .jpeg, .png, or .webp.',
-      name: `image:${input}`,
-      status: 'fail',
-    };
-  }
-
+  const reachable = await reachabilityCheck(input);
   return {
-    message: 'Local image file exists and uses a supported format.',
+    message: reachable ? 'Remote image URL is reachable.' : 'Remote image URL could not be reached.',
     name: `image:${input}`,
-    status: 'pass',
+    status: reachable ? 'pass' : 'fail',
   };
 }
 
@@ -118,24 +120,6 @@ function checkNodeVersion(version: string): DoctorCheck {
   };
 }
 
-function checkOpenAIKey(value: string | undefined, required: boolean): DoctorCheck {
-  const configured = Boolean(value?.trim());
-
-  if (!required && !configured) {
-    return {
-      message: 'OPENAI_API_KEY is optional for JSON-only workflows and required for image extraction.',
-      name: 'OPENAI_API_KEY',
-      status: 'pass',
-    };
-  }
-
-  return {
-    message: configured ? 'OPENAI_API_KEY is configured.' : 'OPENAI_API_KEY is missing.',
-    name: 'OPENAI_API_KEY',
-    status: configured ? 'pass' : 'fail',
-  };
-}
-
 async function defaultReachabilityCheck(url: string) {
   const response = await fetch(url, { method: 'HEAD' }).catch(() => null);
   if (response?.ok) {
@@ -144,6 +128,16 @@ async function defaultReachabilityCheck(url: string) {
 
   const fallback = await fetch(url).catch(() => null);
   return fallback?.ok ?? false;
+}
+
+async function defaultApiSupportCheck(url: string) {
+  const response = await fetch(url).catch(() => null);
+  if (!response?.ok) {
+    return false;
+  }
+
+  const body: any = await response.json().catch(() => null);
+  return Boolean(body?.paths?.['/crosslist/generate']);
 }
 
 function formatOutput(result: DoctorResult, requestedOutput: OutputFormat) {

@@ -1,9 +1,11 @@
 import { z } from 'zod';
 
+declare const schemaVersion = "1.0.0";
 declare const marketplaces: readonly ["ebay", "mercari", "facebook-marketplace", "craigslist", "tcgplayer"];
 declare const conditions: readonly ["brand new", "like new", "very good", "good", "acceptable", "for parts or not working"];
 declare const MarketplaceSchema: z.ZodEnum<["ebay", "mercari", "facebook-marketplace", "craigslist", "tcgplayer"]>;
 declare const OutputFormatSchema: z.ZodEnum<["text", "json", "both"]>;
+declare const ConditionSchema: z.ZodEnum<["brand new", "like new", "very good", "good", "acceptable", "for parts or not working"]>;
 declare const ExtractedItemConditionSchema: z.ZodUnion<[z.ZodEnum<["brand new", "like new", "very good", "good", "acceptable", "for parts or not working"]>, z.ZodLiteral<"">]>;
 declare const ExtractedItemSchema: z.ZodObject<{
     attributes: z.ZodRecord<z.ZodString, z.ZodString>;
@@ -72,6 +74,41 @@ declare const ExtractedItemSchema: z.ZodObject<{
         language?: string | undefined;
         rarity?: string | undefined;
     } | undefined;
+}>;
+declare const ListingSchema: z.ZodObject<{
+    bullets: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    copyBlock: z.ZodString;
+    description: z.ZodString;
+    itemSpecifics: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    marketplace: z.ZodEnum<["ebay", "mercari", "facebook-marketplace", "craigslist", "tcgplayer"]>;
+    notesToSeller: z.ZodArray<z.ZodString, "many">;
+    title: z.ZodString;
+}, "strict", z.ZodTypeAny, {
+    description: string;
+    title: string;
+    copyBlock: string;
+    marketplace: "ebay" | "mercari" | "facebook-marketplace" | "craigslist" | "tcgplayer";
+    notesToSeller: string[];
+    bullets?: string[] | undefined;
+    itemSpecifics?: Record<string, string> | undefined;
+}, {
+    description: string;
+    title: string;
+    copyBlock: string;
+    marketplace: "ebay" | "mercari" | "facebook-marketplace" | "craigslist" | "tcgplayer";
+    notesToSeller: string[];
+    bullets?: string[] | undefined;
+    itemSpecifics?: Record<string, string> | undefined;
+}>;
+declare const SkippedMarketplaceSchema: z.ZodObject<{
+    marketplace: z.ZodEnum<["ebay", "mercari", "facebook-marketplace", "craigslist", "tcgplayer"]>;
+    reason: z.ZodString;
+}, "strict", z.ZodTypeAny, {
+    marketplace: "ebay" | "mercari" | "facebook-marketplace" | "craigslist" | "tcgplayer";
+    reason: string;
+}, {
+    marketplace: "ebay" | "mercari" | "facebook-marketplace" | "craigslist" | "tcgplayer";
+    reason: string;
 }>;
 declare const ListingGenerationResultSchema: z.ZodObject<{
     extractedItem: z.ZodObject<{
@@ -466,4 +503,4 @@ type ListingGenerationResult = z.infer<typeof ListingGenerationResultSchema>;
 type Marketplace = z.infer<typeof MarketplaceSchema>;
 type OutputFormat = z.infer<typeof OutputFormatSchema>;
 
-export { type DoctorCheck as D, type ExtractedItem as E, type GenerateFileInput as G, type ListingGenerationResult as L, type Marketplace as M, type OutputFormat as O, type DoctorResult as a, DoctorResultSchema as b, ExtractedItemConditionSchema as c, GenerateFileInputSchema as d, ListingGenerationResultSchema as e, OutputFormatSchema as f, conditions as g, marketplaces as m };
+export { ConditionSchema as C, type DoctorCheck as D, type ExtractedItem as E, type GenerateFileInput as G, type ListingGenerationResult as L, type Marketplace as M, type OutputFormat as O, SkippedMarketplaceSchema as S, type DoctorResult as a, DoctorResultSchema as b, ExtractedItemConditionSchema as c, ExtractedItemSchema as d, GenerateFileInputSchema as e, ListingGenerationResultSchema as f, ListingSchema as g, MarketplaceSchema as h, OutputFormatSchema as i, conditions as j, marketplaces as m, schemaVersion as s };

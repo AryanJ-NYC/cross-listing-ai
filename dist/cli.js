@@ -9,7 +9,7 @@ import {
   marketplaces,
   normalizeExtractedItem,
   renderHumanReadable
-} from "./chunk-PE47LNGQ.js";
+} from "./chunk-WFSFQ3XB.js";
 
 // src/cli.ts
 import { fileURLToPath } from "url";

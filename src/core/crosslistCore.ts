@@ -1,5 +1,12 @@
 export {
+  ConditionSchema,
   conditions,
+  ExtractedItemSchema,
+  ListingSchema,
+  MarketplaceSchema,
+  schemaVersion,
+  SkippedMarketplaceSchema,
+
   DoctorResultSchema,
   ExtractedItemConditionSchema,
   GenerateFileInputSchema,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { checkbox, input, confirm, select } from '@inquirer/prompts';
-import { M as Marketplace, E as ExtractedItem } from './schemas-DMrEtNbG.js';
+import { M as Marketplace, E as ExtractedItem } from './schemas-BwbiKRTg.js';
 import 'zod';
 
 declare function runDoctorCommand(options: {

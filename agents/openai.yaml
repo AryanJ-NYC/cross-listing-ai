@@ -1,0 +1,7 @@
+interface:
+  display_name: "Crosslist"
+  short_description: "Turn item photos into priced marketplace copy"
+  default_prompt: "Use $crosslist to turn my item photos into a price suggestion and marketplace-ready listings."
+
+policy:
+  allow_implicit_invocation: true

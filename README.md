@@ -1,0 +1,50 @@
+# Crosslist
+
+`crosslist` is a docs-only OpenClaw skill repository for turning seller photos into priced marketplace-ready listings.
+
+The repo keeps the skill prompt, agent metadata, and reference material together in one place.
+
+## What The Skill Does
+
+- turns item photos into a hidden reviewed-item record
+- uses freeform clarification to resolve identity, condition, and completeness
+- suggests a price from live comps, with heuristics only as fallback
+- generates copy-paste-ready listings for eBay, Mercari, Facebook Marketplace, Craigslist, and TCGPlayer
+- keeps TCGPlayer gated on card-specific fields
+
+The required phase flow is:
+
+`intake -> extract -> clarify -> price -> confirm -> generate -> revise`
+
+## Repo Contents
+
+- [`SKILL.md`](./SKILL.md): root skill instructions and reference routing
+- [`agents/openai.yaml`](./agents/openai.yaml): agent metadata for environments that consume OpenAI-style skill descriptors
+- [`references/workflow.md`](./references/workflow.md): end-to-end seller flow and hidden reviewed-item record
+- [`references/extraction.md`](./references/extraction.md): image extraction and clarification guidance
+- [`references/pricing.md`](./references/pricing.md): live comp and pricing guidance
+- [`references/final-output.md`](./references/final-output.md): seller-facing response shape
+- marketplace-specific output rules under `references/marketplaces/`
+- [`references/examples.md`](./references/examples.md): compact sequencing examples
+
+## How To Use The Skill
+
+Start with [`SKILL.md`](./SKILL.md). It tells the agent:
+
+- what the non-negotiable rules are
+- which reference file to open at each phase
+- how to keep the reviewed-item record internal
+- when to block or skip TCGPlayer
+
+The references are meant to be opened progressively, not all at once. `SKILL.md` is the router; the files under `references/` supply the operational detail.
+
+## Core Constraints
+
+- Do not invent facts that are not visible in the images or confirmed by the seller.
+- Keep the reviewed-item record internal and seller-facing responses conversational.
+- Use live comps first for pricing, with heuristics only when market data is thin.
+- Only generate TCGPlayer output when `card name`, `game`, and `set` are known.
+
+## License
+
+Crosslist is released under the terms in [`LICENSE`](./LICENSE).

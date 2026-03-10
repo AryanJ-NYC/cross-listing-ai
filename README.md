@@ -1,6 +1,6 @@
-# Crosslist
+# Cross Listing AI
 
-`crosslist` is a docs-only OpenClaw skill repository for turning seller photos into priced marketplace-ready listings.
+`Cross Listing AI` is a docs-only OpenClaw skill repository for a listing AI that turns seller photos into priced, marketplace-ready listings and copy-paste-ready listing descriptions.
 
 The repo keeps the skill prompt, agent metadata, and reference material together in one place.
 
@@ -29,7 +29,7 @@ The required phase flow is:
 
 ## How To Use The Skill
 
-Start with [`SKILL.md`](./SKILL.md). It tells the agent:
+Start with [`SKILL.md`](./SKILL.md). Use `$cross-listing-ai` when you want the agent to turn item photos into a price suggestion and marketplace-ready listings. The skill tells the agent:
 
 - what the non-negotiable rules are
 - which reference file to open at each phase
@@ -47,4 +47,4 @@ The references are meant to be opened progressively, not all at once. `SKILL.md`
 
 ## License
 
-Crosslist is released under the terms in [`LICENSE`](./LICENSE).
+Cross Listing AI is released under the terms in [`LICENSE`](./LICENSE).

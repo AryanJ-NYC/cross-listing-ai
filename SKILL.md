@@ -1,9 +1,9 @@
 ---
-name: crosslist
-description: Guide an OpenClaw agent through seller-side cross-marketplace listing generation from item photos. Use when the seller wants image analysis, freeform clarification, live-comp pricing, or marketplace-ready copy for eBay, Mercari, Facebook Marketplace, Craigslist, or TCGPlayer.
+name: cross-listing-ai
+description: Guide an OpenClaw agent through seller-side cross listing and marketplace-ready listing generation from item photos. Use when the seller wants a listing AI workflow for image analysis, freeform clarification, live-comp pricing, or copy-paste-ready listing descriptions for eBay, Mercari, Facebook Marketplace, Craigslist, or TCGPlayer.
 ---
 
-# OpenClaw Seller Crosslist
+# OpenClaw Seller Cross Listing AI
 
 Keep the seller experience conversational while you maintain a hidden reviewed-item record.
 

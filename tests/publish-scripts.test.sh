@@ -77,11 +77,23 @@ create_fixture_repo() {
 
   (
     cd "$repo_dir"
-    git init -q
+    git init -q -b main
     git config user.name "Test User"
     git config user.email "test@example.com"
     git add .
     git commit -qm "Initial fixture"
+  )
+}
+
+attach_origin_remote() {
+  local repo_dir=$1
+  local remote_dir="$TEST_TMP_ROOT/$(basename "$repo_dir")-origin.git"
+
+  git init -q --bare "$remote_dir"
+  (
+    cd "$repo_dir"
+    git remote add origin "$remote_dir"
+    git push -q -u origin main
   )
 }
 
@@ -187,6 +199,29 @@ test_publish_clawhub_requires_files() {
   pass "publish-clawhub.sh validates required files"
 }
 
+test_publish_clawhub_requires_marketplace_refs() {
+  local repo_dir="$TEST_TMP_ROOT/clawhub-marketplace"
+  create_fixture_repo "$repo_dir"
+  copy_script "$repo_dir" "publish-clawhub.sh"
+  rm "$repo_dir/references/marketplaces/ebay.md"
+
+  (
+    cd "$repo_dir"
+    git add -A
+    git commit -qm "Remove marketplace brief"
+  )
+
+  local output_file="$TEST_TMP_ROOT/clawhub-marketplace.out"
+  if run_and_capture "$output_file" "$repo_dir/scripts/publish-clawhub.sh" "1.2.3"; then
+    fail "publish-clawhub.sh should fail when a marketplace brief is missing"
+  fi
+
+  local output
+  output=$(cat "$output_file")
+  assert_contains "$output" "references/marketplaces/ebay.md" "publish-clawhub.sh should validate marketplace briefs"
+  pass "publish-clawhub.sh validates marketplace briefs"
+}
+
 test_publish_skills_checks_repo_and_prints_target() {
   local repo_dir="$TEST_TMP_ROOT/publish-skills"
   local bin_dir="$TEST_TMP_ROOT/publish-skills-bin"
@@ -194,6 +229,7 @@ test_publish_skills_checks_repo_and_prints_target() {
   create_fixture_repo "$repo_dir"
   copy_script "$repo_dir" "publish-skills.sh"
   commit_fixture_changes "$repo_dir" "Add publish-skills script"
+  attach_origin_remote "$repo_dir"
   write_fake_npx "$bin_dir"
 
   local output_file="$TEST_TMP_ROOT/publish-skills.out"
@@ -203,6 +239,7 @@ test_publish_skills_checks_repo_and_prints_target() {
 
   local output
   output=$(cat "$output_file")
+  assert_contains "$output" "origin/main" "publish-skills.sh should confirm the default-branch target"
   assert_contains "$output" "AryanJ-NYC/cross-listing-ai" "publish-skills.sh should print the canonical repo target"
   assert_contains "$output" "npx skills add AryanJ-NYC/cross-listing-ai" "publish-skills.sh should print the install command"
 
@@ -242,6 +279,7 @@ main() {
   test_publish_clawhub_requires_version
   test_publish_clawhub_rejects_dirty_repo
   test_publish_clawhub_requires_files
+  test_publish_clawhub_requires_marketplace_refs
   test_publish_skills_checks_repo_and_prints_target
   test_publish_all_short_circuits_on_clawhub_failure
   echo "1..$TESTS_RUN"

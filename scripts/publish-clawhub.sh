@@ -10,16 +10,10 @@ main() {
 
   script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   repo_root=$(cd "$script_dir/.." && pwd)
-  required_files=(
-    "README.md"
-    "SKILL.md"
-    "LICENSE"
-    "agents/openai.yaml"
-    "references/workflow.md"
-    "references/extraction.md"
-    "references/pricing.md"
-    "references/final-output.md"
-  )
+  required_files=()
+  while IFS= read -r required_file; do
+    required_files+=("$required_file")
+  done < <(build_required_files "$repo_root")
 
   if [[ -z "$version" ]]; then
     usage >&2
@@ -62,6 +56,16 @@ Usage: scripts/publish-clawhub.sh <version> [changelog] [tags]
 
 Publishes the current repo contents to ClawHub.
 EOF
+}
+
+build_required_files() {
+  local repo_root=$1
+
+  printf '%s\n' "README.md" "SKILL.md" "LICENSE" "agents/openai.yaml"
+  (
+    cd "$repo_root"
+    grep -Eo 'references/[A-Za-z0-9./-]+\.md' SKILL.md | sort -u
+  )
 }
 
 require_files() {

@@ -17,12 +17,16 @@ This repository is a docs-only skill package for `Cross Listing AI`. Use this fi
 - Metadata changes: update `agents/openai.yaml` and any matching public copy in `README.md`
 - Release and publish work: use the scripts under `scripts/` or the aliases in `package.json`
 
-## Verification
+## Safe Verification
 
 - `npm run test`
+
+## Release Commands
+
 - `npm run publish:clawhub -- <version> [changelog] [tags]`
 - `npm run publish:skills`
 - `npm run publish:all -- <version> [changelog] [tags]`
+- Run the skills.sh entrypoint only from a clean local `main` checkout that already matches `origin/main`
 - Direct entrypoints also work: `scripts/publish-clawhub.sh`, `scripts/publish-skills.sh`, `scripts/publish-all.sh`
 
 ## Freshness Rules

@@ -5,7 +5,7 @@ main() {
   local version=${1-}
   local changelog=${2-}
   local tags=${3-}
-  local script_dir repo_root
+  local script_dir repo_root publish_output
   local -a publish_command required_files
 
   script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -23,6 +23,7 @@ main() {
   require_files "$repo_root" "${required_files[@]}"
   require_clean_git "$repo_root"
   require_command "clawhub"
+  require_command "node"
 
   publish_command=(
     "clawhub"
@@ -44,10 +45,23 @@ main() {
     publish_command+=("--tags" "$tags")
   fi
 
-  if ! (cd "$repo_root" && "${publish_command[@]}"); then
-    echo "ClawHub publish failed. If authentication is the problem, run 'clawhub login' and retry." >&2
-    exit 1
+  publish_output=$(mktemp)
+  if (cd "$repo_root" && "${publish_command[@]}") >"$publish_output" 2>&1; then
+    cat "$publish_output"
+    rm -f "$publish_output"
+    return 0
   fi
+
+  cat "$publish_output" >&2
+  if grep -Fq 'acceptLicenseTerms: invalid value' "$publish_output"; then
+    rm -f "$publish_output"
+    publish_with_api_fallback "$script_dir" "$repo_root" "$version" "$changelog" "$tags"
+    return 0
+  fi
+
+  rm -f "$publish_output"
+  echo "ClawHub publish failed. If authentication is the problem, run 'clawhub login' and retry." >&2
+  exit 1
 }
 
 usage() {
@@ -65,6 +79,19 @@ build_required_files() {
   (
     cd "$repo_root"
     grep -Eo 'references/[A-Za-z0-9./-]+\.md' SKILL.md | sort -u
+  )
+}
+
+publish_with_api_fallback() {
+  local script_dir=$1
+  local repo_root=$2
+  local version=$3
+  local changelog=$4
+  local tags=$5
+
+  (
+    cd "$repo_root"
+    node "$script_dir/publish-clawhub-api.mjs" "$repo_root" "$version" "$changelog" "$tags"
   )
 }
 

@@ -112,6 +112,21 @@ EOF
   chmod +x "$bin_dir/clawhub"
 }
 
+write_fake_node() {
+  local bin_dir=$1
+  mkdir -p "$bin_dir"
+
+  cat > "$bin_dir/node" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'node %s\n' "$*" >> "${FAKE_COMMAND_LOG:?}"
+if [[ "${FAKE_NODE_EXIT_CODE:-0}" != "0" ]]; then
+  exit "${FAKE_NODE_EXIT_CODE}"
+fi
+EOF
+  chmod +x "$bin_dir/node"
+}
+
 write_fake_npx() {
   local bin_dir=$1
   mkdir -p "$bin_dir"
@@ -222,6 +237,37 @@ test_publish_clawhub_requires_marketplace_refs() {
   pass "publish-clawhub.sh validates marketplace briefs"
 }
 
+test_publish_clawhub_falls_back_for_license_terms_error() {
+  local repo_dir="$TEST_TMP_ROOT/clawhub-license-terms"
+  local bin_dir="$TEST_TMP_ROOT/clawhub-license-terms-bin"
+  local log_file="$TEST_TMP_ROOT/clawhub-license-terms.log"
+  create_fixture_repo "$repo_dir"
+  copy_script "$repo_dir" "publish-clawhub.sh"
+  commit_fixture_changes "$repo_dir" "Add publish-clawhub script"
+  mkdir -p "$bin_dir"
+
+  cat > "$bin_dir/clawhub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'clawhub %s\n' "$*" >> "${FAKE_COMMAND_LOG:?}"
+echo "✖ Publish payload: acceptLicenseTerms: invalid value" >&2
+exit 1
+EOF
+  chmod +x "$bin_dir/clawhub"
+  write_fake_node "$bin_dir"
+
+  local output_file="$TEST_TMP_ROOT/clawhub-license-terms.out"
+  if ! PATH="$bin_dir:$PATH" FAKE_COMMAND_LOG="$log_file" run_and_capture "$output_file" "$repo_dir/scripts/publish-clawhub.sh" "1.2.3"; then
+    fail "publish-clawhub.sh should fall back to the API publisher when the CLI rejects license terms"
+  fi
+
+  local log_output
+  log_output=$(cat "$log_file")
+  assert_contains "$log_output" "clawhub publish" "publish-clawhub.sh should try the CLI publish first"
+  assert_contains "$log_output" "node " "publish-clawhub.sh should invoke the Node fallback publisher"
+  pass "publish-clawhub.sh falls back when the CLI rejects license terms"
+}
+
 test_publish_skills_checks_repo_and_prints_target() {
   local repo_dir="$TEST_TMP_ROOT/publish-skills"
   local bin_dir="$TEST_TMP_ROOT/publish-skills-bin"
@@ -280,6 +326,7 @@ main() {
   test_publish_clawhub_rejects_dirty_repo
   test_publish_clawhub_requires_files
   test_publish_clawhub_requires_marketplace_refs
+  test_publish_clawhub_falls_back_for_license_terms_error
   test_publish_skills_checks_repo_and_prints_target
   test_publish_all_short_circuits_on_clawhub_failure
   echo "1..$TESTS_RUN"

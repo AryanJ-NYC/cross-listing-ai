@@ -5,6 +5,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 TEST_TMP_ROOT=$(mktemp -d)
 TESTS_RUN=0
+REAL_NODE=$(command -v node)
 
 cleanup() {
   rm -rf "$TEST_TMP_ROOT"
@@ -51,6 +52,14 @@ copy_script() {
 
   cp "$REPO_ROOT/scripts/$script_name" "$repo_dir/scripts/$script_name"
   chmod +x "$repo_dir/scripts/$script_name"
+}
+
+copy_repo_file() {
+  local repo_dir=$1
+  local relative_path=$2
+
+  mkdir -p "$repo_dir/$(dirname "$relative_path")"
+  cp "$REPO_ROOT/$relative_path" "$repo_dir/$relative_path"
 }
 
 commit_fixture_changes() {
@@ -110,6 +119,24 @@ if [[ "${FAKE_CLAWHUB_EXIT_CODE:-0}" != "0" ]]; then
 fi
 EOF
   chmod +x "$bin_dir/clawhub"
+}
+
+write_fake_node() {
+  local bin_dir=$1
+  mkdir -p "$bin_dir"
+
+  cat > "$bin_dir/node" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'node %s\n' "\$*" >> "\${FAKE_COMMAND_LOG:?}"
+if [[ -n "\${1:-}" && -f "\$1" ]]; then
+  "$REAL_NODE" --check "\$1" >/dev/null
+fi
+if [[ "\${FAKE_NODE_EXIT_CODE:-0}" != "0" ]]; then
+  exit "\${FAKE_NODE_EXIT_CODE}"
+fi
+EOF
+  chmod +x "$bin_dir/node"
 }
 
 write_fake_npx() {
@@ -222,6 +249,115 @@ test_publish_clawhub_requires_marketplace_refs() {
   pass "publish-clawhub.sh validates marketplace briefs"
 }
 
+test_publish_clawhub_falls_back_for_license_terms_error() {
+  local repo_dir="$TEST_TMP_ROOT/clawhub-license-terms"
+  local bin_dir="$TEST_TMP_ROOT/clawhub-license-terms-bin"
+  local log_file="$TEST_TMP_ROOT/clawhub-license-terms.log"
+  create_fixture_repo "$repo_dir"
+  copy_script "$repo_dir" "publish-clawhub.sh"
+  copy_repo_file "$repo_dir" "scripts/publish-clawhub-api.mjs"
+  commit_fixture_changes "$repo_dir" "Add publish-clawhub files"
+  mkdir -p "$bin_dir"
+
+  cat > "$bin_dir/clawhub" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'clawhub %s\n' "$*" >> "${FAKE_COMMAND_LOG:?}"
+echo "✖ Publish payload: acceptLicenseTerms: invalid value" >&2
+exit 1
+EOF
+  chmod +x "$bin_dir/clawhub"
+  write_fake_node "$bin_dir"
+
+  local output_file="$TEST_TMP_ROOT/clawhub-license-terms.out"
+  if ! PATH="$bin_dir:$PATH" FAKE_COMMAND_LOG="$log_file" run_and_capture "$output_file" "$repo_dir/scripts/publish-clawhub.sh" "1.2.3"; then
+    fail "publish-clawhub.sh should fall back to the API publisher when the CLI rejects license terms"
+  fi
+
+  local log_output
+  log_output=$(cat "$log_file")
+  assert_contains "$log_output" "clawhub publish" "publish-clawhub.sh should try the CLI publish first"
+  assert_contains "$log_output" "node " "publish-clawhub.sh should invoke the Node fallback publisher"
+  assert_contains "$log_output" "publish-clawhub-api.mjs" "publish-clawhub.sh should invoke the fallback helper file"
+  pass "publish-clawhub.sh falls back when the CLI rejects license terms"
+}
+
+test_publish_clawhub_api_uses_latest_tag_by_default() {
+  local repo_dir="$TEST_TMP_ROOT/clawhub-api"
+  local server_file="$TEST_TMP_ROOT/clawhub-api-server.mjs"
+  local request_file="$TEST_TMP_ROOT/clawhub-api-request.txt"
+  local port_file="$TEST_TMP_ROOT/clawhub-api-port.txt"
+  local config_file="$TEST_TMP_ROOT/clawhub-api-config.json"
+  create_fixture_repo "$repo_dir"
+  copy_repo_file "$repo_dir" "scripts/publish-clawhub-api.mjs"
+
+  cat > "$server_file" <<'EOF'
+import { createServer } from 'node:http';
+import { writeFileSync } from 'node:fs';
+
+const requestFile = process.argv[2];
+const portFile = process.argv[3];
+
+const server = createServer((req, res) => {
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', () => {
+    writeFileSync(requestFile, Buffer.concat(chunks));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, versionId: 'ver_test' }));
+    server.close(() => process.exit(0));
+  });
+});
+
+server.listen(0, '127.0.0.1', () => {
+  const address = server.address();
+  writeFileSync(portFile, String(address.port));
+});
+EOF
+
+  "$REAL_NODE" "$server_file" "$request_file" "$port_file" &
+  local server_pid=$!
+  local port=""
+
+  for _ in $(seq 1 50); do
+    if [[ -f "$port_file" ]]; then
+      port=$(cat "$port_file")
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ -z "$port" ]]; then
+    kill "$server_pid" 2>/dev/null || true
+    fail "test registry did not start"
+  fi
+
+  cat > "$config_file" <<EOF
+{
+  "registry": "http://127.0.0.1:$port",
+  "token": "test-token"
+}
+EOF
+
+  local output_file="$TEST_TMP_ROOT/clawhub-api.out"
+  if ! CLAWHUB_CONFIG_PATH="$config_file" "$REAL_NODE" "$repo_dir/scripts/publish-clawhub-api.mjs" "$repo_dir" "1.2.3" "" "" >"$output_file" 2>&1; then
+    kill "$server_pid" 2>/dev/null || true
+    fail "publish-clawhub-api.mjs should succeed against the test registry"
+  fi
+
+  wait "$server_pid"
+
+  local output
+  output=$(cat "$output_file")
+  assert_contains "$output" "OK. Published cross-listing-ai@1.2.3" "publish-clawhub-api.mjs should report success"
+
+  local request_body
+  request_body=$(cat "$request_file")
+  assert_contains "$request_body" '"acceptLicenseTerms":true' "publish-clawhub-api.mjs should accept the license terms"
+  assert_contains "$request_body" '"tags":["latest"]' "publish-clawhub-api.mjs should default to the latest tag"
+  pass "publish-clawhub-api.mjs defaults the fallback publish tag to latest"
+}
+
 test_publish_skills_checks_repo_and_prints_target() {
   local repo_dir="$TEST_TMP_ROOT/publish-skills"
   local bin_dir="$TEST_TMP_ROOT/publish-skills-bin"
@@ -280,6 +416,8 @@ main() {
   test_publish_clawhub_rejects_dirty_repo
   test_publish_clawhub_requires_files
   test_publish_clawhub_requires_marketplace_refs
+  test_publish_clawhub_falls_back_for_license_terms_error
+  test_publish_clawhub_api_uses_latest_tag_by_default
   test_publish_skills_checks_repo_and_prints_target
   test_publish_all_short_circuits_on_clawhub_failure
   echo "1..$TESTS_RUN"

@@ -45,6 +45,18 @@ The references are meant to be opened progressively, not all at once. `SKILL.md`
 - Use live comps first for pricing, with heuristics only when market data is thin.
 - Only generate TCGPlayer output when `card name`, `game`, and `set` are known.
 
+## Publishing
+
+Publishing expects a clean git tree.
+
+- ClawHub: install and authenticate `clawhub`, then run `npm run publish:clawhub -- 0.1.0` or `scripts/publish-clawhub.sh 0.1.0`
+- skills.sh: from a clean local `main` checkout that already matches `origin/main`, run `npm run publish:skills` or `scripts/publish-skills.sh`
+- Both: from that same pushed `main` state, run `npm run publish:all -- 0.1.0` or `scripts/publish-all.sh 0.1.0`
+
+skills.sh uses the GitHub-backed default branch as the install target, so this command validates that pushed state and the install command rather than uploading a separate package.
+
+Optional positional arguments for the ClawHub entrypoint are `[changelog] [tags]`.
+
 ## License
 
 Cross Listing AI is released under the terms in [`LICENSE`](./LICENSE).

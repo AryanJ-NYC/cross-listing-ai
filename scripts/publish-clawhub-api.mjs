@@ -22,10 +22,10 @@ async function main() {
   const repoRoot = path.resolve(process.argv[2] ?? '.');
   const version = process.argv[3];
   const changelog = process.argv[4] ?? '';
-  const tags = (process.argv[5] ?? 'latest')
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean);
+  const rawTags = process.argv[5]?.trim();
+  const tags = rawTags
+    ? rawTags.split(',').map((tag) => tag.trim()).filter(Boolean)
+    : ['latest'];
 
   if (!version) {
     throw new Error('Version is required');
